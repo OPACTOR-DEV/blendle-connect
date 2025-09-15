@@ -1,8 +1,8 @@
-import { spawn, execSync, exec } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { BrowserWindow, shell } from 'electron';
+import { BrowserWindow } from 'electron';
 import { logger } from '../utils/logger';
 import { EnvironmentManager } from '../utils/environment';
 
@@ -13,7 +13,6 @@ interface ClaudeLoginOptions {
 }
 
 export class ClaudeService {
-  private static buffer = '';
 
   static async performAutoLogin(options: ClaudeLoginOptions): Promise<void> {
     const { onLog, onAuthComplete } = options;

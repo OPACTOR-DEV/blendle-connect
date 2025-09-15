@@ -32,9 +32,16 @@ expect {
                 # Success indicator
                 puts "LOGIN_SUCCESS"
 
-                # Wait a moment for browser to open
-                sleep 3
-                send "\003"
+                # Keep the process alive to allow authentication
+                # The app will monitor keychain and kill this when done
+                expect {
+                    "Successfully authenticated" {
+                        puts "AUTH_COMPLETE"
+                    }
+                    timeout {
+                        # Just wait, app will handle timeout
+                    }
+                }
             }
             timeout {
                 puts "LOGIN_FAILED:No URL detected"
