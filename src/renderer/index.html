@@ -3,142 +3,260 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Blendle Connect</title>
+    <title>AI Assistant Hub</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- System Setup Overlay -->
+    <div id="prerequisite-overlay" class="prerequisite-overlay">
+        <div class="setup-card">
+            <div class="setup-animation">
+                <div class="setup-icon">
+                    <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M12 6v6l4 2"></path>
+                    </svg>
+                </div>
+                <div class="setup-progress">
+                    <div class="progress-ring"></div>
+                </div>
+            </div>
+            <h2>Setting up your AI assistants</h2>
+            <p id="prerequisite-message">Getting everything ready...</p>
+            <div class="setup-steps">
+                <div class="step" id="step-check">
+                    <span class="step-icon">⚙️</span>
+                    <span>Checking system</span>
+                </div>
+                <div class="step" id="step-install">
+                    <span class="step-icon">📦</span>
+                    <span>Installing components</span>
+                </div>
+                <div class="step" id="step-ready">
+                    <span class="step-icon">✨</span>
+                    <span>Almost ready!</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
+        <!-- Simplified Header -->
         <div class="header">
-            <h1 class="app-title">Blendle Connect</h1>
-            <p class="subtitle">Connect to your favorite AI CLI tools</p>
+            <div class="app-logo">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="url(#gradient)" stroke-width="2">
+                    <defs>
+                        <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#10b981" />
+                            <stop offset="100%" stop-color="#3b82f6" />
+                        </linearGradient>
+                    </defs>
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z"></path>
+                    <path d="M2 17L12 22L22 17"></path>
+                    <path d="M2 12L12 17L22 12"></path>
+                </svg>
+            </div>
+            <div>
+                <h1 class="app-title">AI Assistant Hub</h1>
+                <p class="subtitle">Connect to powerful AI assistants in one click</p>
+            </div>
         </div>
 
-        <div class="cli-grid">
-            <!-- Codex CLI Card -->
-            <div class="cli-card" id="codex-card">
-                <div class="cli-header">
-                    <div class="cli-icon codex">
+        <!-- Welcome Message -->
+        <div class="welcome-card">
+            <h3>👋 Welcome!</h3>
+            <p>Connect to AI assistants that can help you code, write, and solve problems. Just click the Connect button below each assistant to get started.</p>
+        </div>
+
+        <!-- Assistant Cards -->
+        <div class="assistant-grid">
+            <!-- ChatGPT Assistant -->
+            <div class="assistant-card" id="codex-card">
+                <div class="assistant-header">
+                    <div class="assistant-avatar codex">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M12 2L2 7L12 12L22 7L12 2Z"></path>
                             <path d="M2 17L12 22L22 17"></path>
                             <path d="M2 12L12 17L22 12"></path>
                         </svg>
                     </div>
-                    <h3>Codex CLI</h3>
-                    <span class="cli-badge">GPT-5</span>
+                    <div class="assistant-info">
+                        <h3>ChatGPT Assistant</h3>
+                        <span class="assistant-tag">🚀 Most Advanced</span>
+                    </div>
                 </div>
-                <p class="cli-description">OpenAI's lightweight coding agent with GPT-5 support</p>
-                <div class="cli-features">
-                    <span class="feature">High reasoning</span>
-                    <span class="feature">Local execution</span>
-                    <span class="feature">Auto-edit mode</span>
+
+                <div class="assistant-description">
+                    <p>OpenAI's most powerful AI that can help with coding, writing, analysis, and creative tasks.</p>
                 </div>
-                <div class="button-group" id="button-group-codex">
-                    <button class="connect-btn" id="connect-codex" data-tool="codex">
+
+                <div class="assistant-features">
+                    <div class="feature-item">
+                        <span class="feature-icon">🧠</span>
+                        <span>Super smart reasoning</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">💻</span>
+                        <span>Writes & edits code</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">⚡</span>
+                        <span>Fast responses</span>
+                    </div>
+                </div>
+
+                <div class="connection-status" id="status-codex"></div>
+
+                <div class="action-buttons">
+                    <button class="connect-btn primary" id="connect-codex" data-tool="codex">
+                        <span class="btn-icon">🔗</span>
                         <span class="btn-text">Connect</span>
                         <div class="spinner" style="display: none;"></div>
                     </button>
-                    <button class="logout-btn" id="logout-codex" data-tool="codex" style="display: none;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                            <polyline points="16 17 21 12 16 7"></polyline>
-                            <line x1="21" y1="12" x2="9" y2="12"></line>
-                        </svg>
-                        <span>Logout</span>
+                    <button class="disconnect-btn" id="logout-codex" data-tool="codex" style="display: none;">
+                        <span class="btn-icon">👋</span>
+                        <span>Disconnect</span>
                     </button>
                 </div>
-                <div class="status-indicator" id="status-codex"></div>
             </div>
 
-            <!-- Claude Code Card -->
-            <div class="cli-card" id="claude-card">
-                <div class="cli-header">
-                    <div class="cli-icon claude">
+            <!-- Claude Assistant -->
+            <div class="assistant-card" id="claude-card">
+                <div class="assistant-header">
+                    <div class="assistant-avatar claude">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                            <path d="M21 8.5C21 7.11929 19.8807 6 18.5 6C17.1193 6 16 7.11929 16 8.5V15.5C16 16.8807 17.1193 18 18.5 18C19.8807 18 21 16.8807 21 15.5V8.5Z"></path>
+                            <path d="M3 8.5C3 7.11929 4.11929 6 5.5 6C6.88071 6 8 7.11929 8 8.5V15.5C8 16.8807 6.88071 18 5.5 18C4.11929 18 3 16.8807 3 15.5V8.5Z"></path>
+                            <path d="M8 12H16"></path>
                         </svg>
                     </div>
-                    <h3>Claude Code</h3>
-                    <span class="cli-badge">Opus 4.1</span>
+                    <div class="assistant-info">
+                        <h3>Claude Assistant</h3>
+                        <span class="assistant-tag">⚡ Fast & Powerful</span>
+                    </div>
                 </div>
-                <p class="cli-description">Anthropic's Claude Code CLI with cutting-edge models</p>
-                <div class="cli-features">
-                    <span class="feature">Multi-model</span>
-                    <span class="feature">MCP integration</span>
-                    <span class="feature">AGENTS.md</span>
+
+                <div class="assistant-description">
+                    <p>Anthropic's advanced AI assistant that excels at coding, analysis, and complex reasoning tasks.</p>
                 </div>
-                <div class="button-group" id="button-group-claude">
-                    <button class="connect-btn" id="connect-claude" data-tool="claude">
+
+                <div class="assistant-features">
+                    <div class="feature-item">
+                        <span class="feature-icon">💻</span>
+                        <span>Expert coding assistant</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">🔍</span>
+                        <span>Deep code understanding</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">🚀</span>
+                        <span>High-quality responses</span>
+                    </div>
+                </div>
+
+                <div class="connection-status" id="status-claude"></div>
+
+                <div class="action-buttons">
+                    <button class="connect-btn primary" id="connect-claude" data-tool="claude">
+                        <span class="btn-icon">🔗</span>
                         <span class="btn-text">Connect</span>
                         <div class="spinner" style="display: none;"></div>
                     </button>
-                    <button class="logout-btn" id="logout-claude" data-tool="claude" style="display: none;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                            <polyline points="16 17 21 12 16 7"></polyline>
-                            <line x1="21" y1="12" x2="9" y2="12"></line>
-                        </svg>
-                        <span>Logout</span>
+                    <button class="disconnect-btn" id="logout-claude" data-tool="claude" style="display: none;">
+                        <span class="btn-icon">👋</span>
+                        <span>Disconnect</span>
                     </button>
                 </div>
-                <div class="status-indicator" id="status-claude"></div>
             </div>
 
-            <!-- Gemini CLI Card -->
-            <div class="cli-card" id="gemini-card">
-                <div class="cli-header">
-                    <div class="cli-icon gemini">
+            <!-- Gemini Assistant -->
+            <div class="assistant-card" id="gemini-card">
+                <div class="assistant-header">
+                    <div class="assistant-avatar gemini">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="10"></circle>
                             <path d="M12 2a7 7 0 1 0 0 14a7 7 0 1 0 0 14"></path>
                             <circle cx="12" cy="12" r="3"></circle>
                         </svg>
                     </div>
-                    <h3>Gemini CLI</h3>
-                    <span class="cli-badge">2.5 Pro</span>
+                    <div class="assistant-info">
+                        <h3>Gemini Assistant</h3>
+                        <span class="assistant-tag">🌟 Google AI</span>
+                    </div>
                 </div>
-                <p class="cli-description">Google's open-source AI agent with Gemini 2.5 Pro</p>
-                <div class="cli-features">
-                    <span class="feature">1M tokens</span>
-                    <span class="feature">Google Search</span>
-                    <span class="feature">MCP support</span>
+
+                <div class="assistant-description">
+                    <p>Google's advanced AI with huge context window and access to Google Search for real-time information.</p>
                 </div>
-                <div class="button-group" id="button-group-gemini">
-                    <button class="connect-btn" id="connect-gemini" data-tool="gemini">
+
+                <div class="assistant-features">
+                    <div class="feature-item">
+                        <span class="feature-icon">📚</span>
+                        <span>Handles large documents</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">🔍</span>
+                        <span>Google Search access</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">🌐</span>
+                        <span>Real-time information</span>
+                    </div>
+                </div>
+
+                <div class="connection-status" id="status-gemini"></div>
+
+                <div class="action-buttons">
+                    <button class="connect-btn primary" id="connect-gemini" data-tool="gemini">
+                        <span class="btn-icon">🔗</span>
                         <span class="btn-text">Connect</span>
                         <div class="spinner" style="display: none;"></div>
                     </button>
-                    <button class="logout-btn" id="logout-gemini" data-tool="gemini" style="display: none;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                            <polyline points="16 17 21 12 16 7"></polyline>
-                            <line x1="21" y1="12" x2="9" y2="12"></line>
-                        </svg>
-                        <span>Logout</span>
+                    <button class="disconnect-btn" id="logout-gemini" data-tool="gemini" style="display: none;">
+                        <span class="btn-icon">👋</span>
+                        <span>Disconnect</span>
                     </button>
                 </div>
-                <div class="status-indicator" id="status-gemini"></div>
             </div>
         </div>
 
-        <!-- Debug Console -->
-        <div class="debug-section">
-            <div class="debug-header">
-                <h3>Debug Console</h3>
-                <button class="toggle-debug" id="toggle-debug">
+        <!-- Help Section -->
+        <div class="help-section">
+            <h3>❓ How it works</h3>
+            <div class="help-steps">
+                <div class="help-step">
+                    <span class="step-number">1</span>
+                    <p>Click "Connect" on any AI assistant</p>
+                </div>
+                <div class="help-step">
+                    <span class="step-number">2</span>
+                    <p>Sign in with your account when prompted</p>
+                </div>
+                <div class="help-step">
+                    <span class="step-number">3</span>
+                    <p>Start using the AI assistant in your terminal!</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Log (Hidden by default) -->
+        <div class="activity-section">
+            <div class="activity-header">
+                <h3>📋 Activity Log</h3>
+                <button class="toggle-activity" id="toggle-debug">
+                    <span id="toggle-text">Show Details</span>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="6 9 12 15 18 9"></polyline>
                     </svg>
                 </button>
             </div>
-            <div class="debug-console" id="debug-console">
-                <div class="console-output" id="console-output"></div>
+            <div class="activity-log collapsed" id="debug-console">
+                <div class="log-output" id="console-output"></div>
             </div>
         </div>
     </div>
 
-    <script src="renderer.js"></script>
+    <script type="module" src="../../dist/renderer/renderer.js"></script>
 </body>
 </html>

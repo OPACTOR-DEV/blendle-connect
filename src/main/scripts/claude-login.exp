@@ -1,0 +1,50 @@
+#!/usr/bin/expect -f
+
+# Claude Code Automated Login Script
+set timeout 60
+
+# Clean up existing auth first
+catch {exec pkill -f claude}
+catch {exec security delete-generic-password -s "Claude Code-credentials"}
+
+# Start Claude
+spawn claude
+
+# Handle initial interaction
+expect {
+    "Choose the text style" {
+        send "\r"
+        exp_continue
+    }
+    "Select login method" {
+        # Select option 1 (Anthropic account)
+        send "\r"
+
+        # Wait for browser URL
+        expect {
+            -re {(https://[^\s\)\]]+)} {
+                set url $expect_out(1,string)
+                puts "AUTH_URL:$url"
+
+                # Open browser
+                catch {exec open "$url"}
+
+                # Success indicator
+                puts "LOGIN_SUCCESS"
+
+                # Wait a moment for browser to open
+                sleep 3
+                send "\003"
+            }
+            timeout {
+                puts "LOGIN_FAILED:No URL detected"
+                send "\003"
+            }
+        }
+    }
+    timeout {
+        puts "LOGIN_FAILED:Initial timeout"
+    }
+}
+
+expect eof

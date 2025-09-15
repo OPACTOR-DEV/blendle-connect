@@ -1,0 +1,56 @@
+#!/usr/bin/expect -f
+
+# Claude Code Full Login with Browser Test
+set timeout 60
+
+puts "========================================="
+puts "Claude Code - Testing Browser Launch"
+puts "========================================="
+puts ""
+
+# Clean up
+catch {exec pkill -f claude}
+catch {exec security delete-generic-password -s "Claude Code-credentials"}
+
+puts "Starting Claude fresh..."
+spawn claude
+
+expect {
+    "Choose the text style" {
+        puts "→ Theme selection: Pressing Enter for Dark mode"
+        send "\r"
+        exp_continue
+    }
+    "Select login method" {
+        puts "\n✅ LOGIN METHOD SCREEN APPEARED!"
+        puts "→ Selecting option 1 (Claude account with subscription)"
+        send "1\r"
+
+        puts "\nWaiting for browser URL..."
+        expect {
+            -re {(https://[^\s\)\]]+)} {
+                set url $expect_out(1,string)
+                puts "\n========================================="
+                puts "🎉 SUCCESS! Browser URL detected:"
+                puts "URL: $url"
+                puts "========================================="
+
+                puts "\n→ Opening browser..."
+                catch {exec open "$url"}
+                puts "✅ Browser should be opening now!"
+
+                sleep 5
+                send "\003"  ;# Ctrl+C to exit
+            }
+            timeout {
+                puts "⚠️  No browser URL detected"
+            }
+        }
+    }
+    timeout {
+        puts "⚠️  Timeout reached"
+    }
+}
+
+expect eof
+puts "\n✅ Test complete!"

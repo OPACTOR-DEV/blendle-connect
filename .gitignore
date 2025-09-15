@@ -1,65 +1,8 @@
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
-.pnpm-debug.log*
-
-# macOS
+node_modules
+dist
+dist-app
 .DS_Store
-.AppleDouble
-.LSOverride
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Build outputs
-dist/
-out/
-build/
-
-# Environment variables
+*.log
+logs/
 .env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Logs
-logs/
-*.log
-
-# Runtime data
-pids/
-*.pid
-*.seed
-*.pid.lock
-
-# Dependency directories
-jspm_packages/
-
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
-.eslintcache
-
-# Optional stylelint cache
-.stylelintcache
-
-# Optional REPL history
-.node_repl_history
-
-# Electron specific
-.electron-cache/
-.electron-gyp/
-
-# Package-lock files (optional, uncomment if you don't want them tracked)
-# package-lock.json
-# yarn.lock
-# pnpm-lock.yaml

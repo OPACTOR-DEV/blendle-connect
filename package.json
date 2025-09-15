@@ -1,18 +1,21 @@
 {
   "name": "blendle-connect",
   "version": "1.0.0",
-  "description": "Connect to ChatGPT, Claude, and Gemini CLI tools",
-  "main": "src/main/index.js",
+  "description": "Connect to ChatGPT (Codex) and Gemini CLI tools",
+  "main": "dist/main/index.js",
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder",
-    "build:mac": "electron-builder --mac",
-    "build:mac-unsigned": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
-    "dist": "electron-builder --publish=never"
+    "build:ts": "tsc && tsc -p tsconfig.renderer.json",
+    "clean": "rm -rf dist",
+    "start": "npm run build:ts && electron .",
+    "dev": "npm run build:ts && NODE_ENV=development electron .",
+    "build": "npm run build:ts && electron-builder",
+    "build:mac": "npm run build:ts && electron-builder --mac",
+    "build:mac-unsigned": "npm run build:ts && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
+    "dist": "npm run build:ts && electron-builder --publish=never",
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
     "codex",
-    "claude",
     "gemini",
     "ai",
     "cli",
@@ -21,8 +24,11 @@
   "author": "Blendle Connect",
   "license": "MIT",
   "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.5",
     "electron": "^28.0.0",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "typescript": "^5.3.3"
   },
   "dependencies": {
     "axios": "^1.6.2",
@@ -33,12 +39,14 @@
     "productName": "Blendle Connect",
     "npmRebuild": false,
     "directories": {
-      "output": "dist"
+      "output": "dist-app"
     },
     "files": [
-      "src/**/*",
+      "dist/**/*",
       "assets/**/*",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "!src/**/*",
+      "!*.ts"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
