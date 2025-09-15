@@ -1,0 +1,24 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="100" fill="url(#gradient)"/>
+  <g transform="translate(128, 128)">
+    <!-- Central hub -->
+    <circle cx="128" cy="128" r="40" fill="white" opacity="0.9"/>
+
+    <!-- Three connection nodes -->
+    <circle cx="60" cy="60" r="25" fill="#10b981" opacity="0.9"/>
+    <circle cx="196" cy="60" r="25" fill="#8b5cf6" opacity="0.9"/>
+    <circle cx="128" cy="196" r="25" fill="#3b82f6" opacity="0.9"/>
+
+    <!-- Connection lines -->
+    <line x1="128" y1="128" x2="60" y2="60" stroke="white" stroke-width="4" opacity="0.5"/>
+    <line x1="128" y1="128" x2="196" y2="60" stroke="white" stroke-width="4" opacity="0.5"/>
+    <line x1="128" y1="128" x2="128" y2="196" stroke="white" stroke-width="4" opacity="0.5"/>
+  </g>
+
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f0f14;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#1a1b26;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+</svg>

@@ -1,0 +1,57 @@
+{
+  "name": "blendle-connect",
+  "version": "1.0.0",
+  "description": "Connect to ChatGPT, Claude, and Gemini CLI tools",
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:mac-unsigned": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
+    "dist": "electron-builder --publish=never"
+  },
+  "keywords": [
+    "codex",
+    "claude",
+    "gemini",
+    "ai",
+    "cli",
+    "installer"
+  ],
+  "author": "Blendle Connect",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "express": "^4.18.2"
+  },
+  "build": {
+    "appId": "com.blendle.connect",
+    "productName": "Blendle Connect",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png",
+      "category": "Development"
+    }
+  }
+}
