@@ -440,10 +440,13 @@ export class AuthManager {
   }
 
   async extractCredentials(toolId: ToolId): Promise<Credentials> {
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 1000));
 
     if (toolId === 'claude') {
-      return await ClaudeService.extractCredentials();
+      const credentials = await ClaudeService.extractCredentials();
+      // Store credentials for later copy functionality
+      await this.storeCredentials(toolId, credentials);
+      return credentials;
     } else if (toolId === 'codex') {
       const possiblePaths = [
         path.join(os.homedir(), '.codex', 'auth.json'),
@@ -455,62 +458,71 @@ export class AuthManager {
           await fsPromises.access(credPath);
           const authData = await fsPromises.readFile(credPath, 'utf-8');
 
-          let credentials;
+          let credentials: any = {};
           if (credPath.endsWith('.toml')) {
-            credentials = { path: credPath, format: 'toml', content: authData };
+            // Parse TOML for key info
+            const apiKeyMatch = authData.match(/api_key\s*=\s*"([^"]+)"/i);
+            if (apiKeyMatch) {
+              credentials.apiKey = apiKeyMatch[1];
+            }
+            credentials.path = credPath;
+            credentials.format = 'toml';
+            credentials.raw = authData;
           } else {
-            credentials = JSON.parse(authData);
+            const parsed = JSON.parse(authData);
+            credentials = {
+              ...parsed,
+              path: credPath,
+              format: 'json'
+            };
           }
+
+          credentials.status = 'authenticated';
+          credentials.message = 'ChatGPT (Codex) authenticated successfully';
 
           logger.debug('AuthManager', `Codex credentials found at: ${credPath}`);
           this.sendLog(toolId, `Credentials extracted from: ${credPath}`);
 
+          // Store for later copy functionality
+          await this.storeCredentials(toolId, credentials);
           return credentials;
         } catch {
           continue;
         }
       }
     } else if (toolId === 'gemini') {
-      logger.debug('AuthManager', 'Gemini CLI uses local cache for credentials');
-      this.sendLog(toolId, 'Authentication completed (credentials cached locally)');
+      const geminiDir = path.join(os.homedir(), '.gemini');
+      const oauthPath = path.join(geminiDir, 'oauth_creds.json');
+
+      let credentials: any = {
+        status: 'authenticated',
+        message: 'Gemini CLI authenticated successfully',
+        storage: 'local-oauth'
+      };
 
       try {
-        const checkAuth = spawn('gemini', ['--version'], {
-          env: EnvironmentManager.getSpawnEnv()
-        });
+        await fsPromises.access(oauthPath);
+        const oauthData = await fsPromises.readFile(oauthPath, 'utf-8');
+        const parsed = JSON.parse(oauthData);
 
-        return new Promise((resolve) => {
-          checkAuth.on('close', (code) => {
-            if (code === 0) {
-              resolve({
-                status: 'authenticated',
-                message: 'Gemini CLI authenticated successfully',
-                storage: 'local-cache'
-              });
-            } else {
-              resolve({
-                status: 'authentication-required',
-                message: 'Gemini CLI may need re-authentication',
-                storage: 'local-cache'
-              });
-            }
-          });
-
-          checkAuth.on('error', () => {
-            resolve({
-              status: 'error',
-              message: 'Could not verify Gemini authentication',
-              storage: 'local-cache'
-            });
-          });
-        });
-      } catch {
-        return {
-          status: 'authenticated',
-          message: 'Gemini CLI authenticated (verification skipped)',
-          storage: 'local-cache'
+        credentials.oauth = {
+          path: oauthPath,
+          clientId: parsed.client_id,
+          clientSecret: parsed.client_secret ? '***' : undefined,
+          refreshToken: parsed.refresh_token ? '***' : undefined,
+          accessToken: parsed.access_token ? '***' : undefined
         };
+
+        logger.debug('AuthManager', 'Gemini OAuth credentials found');
+        this.sendLog(toolId, 'OAuth credentials verified');
+      } catch {
+        logger.debug('AuthManager', 'Gemini CLI uses local cache for credentials');
+        this.sendLog(toolId, 'Authentication completed (credentials cached locally)');
       }
+
+      // Store for later copy functionality
+      await this.storeCredentials(toolId, credentials);
+      return credentials;
     }
 
     return {
@@ -692,5 +704,156 @@ export class AuthManager {
 
   closeCallbackServers(): void {
     this.callbackServer.closeAll();
+  }
+
+  private async storeCredentials(toolId: ToolId, credentials: any): Promise<void> {
+    // Store credentials in memory for copy functionality
+    // In a production app, you might want to use a more secure storage method
+    const storedCreds = {
+      toolId,
+      credentials,
+      timestamp: new Date().toISOString()
+    };
+
+    // Send to renderer for display/copy functionality
+    this.mainWindow.webContents.send('credentials-stored', storedCreds);
+  }
+
+  async getStoredCredentials(toolId: ToolId): Promise<any> {
+    // Re-extract credentials when needed for copy
+    if (await this.checkAuthenticated(toolId)) {
+      return await this.extractCredentials(toolId);
+    }
+    return null;
+  }
+
+  async getCopyableCredentials(toolId: ToolId): Promise<{ copyText: string; message: string } | null> {
+    try {
+      if (toolId === 'claude') {
+        // For Claude on macOS, try to get the actual credential from keychain
+        if (process.platform === 'darwin') {
+          try {
+            const result = execSync('security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null', {
+              encoding: 'utf-8'
+            });
+            if (result && result.trim()) {
+              // Try to parse and format if it's JSON
+              try {
+                const parsed = JSON.parse(result.trim());
+                return {
+                  copyText: JSON.stringify(parsed, null, 2),
+                  message: 'Claude credentials copied from Keychain'
+                };
+              } catch {
+                // Not JSON, return as-is
+                return {
+                  copyText: result.trim(),
+                  message: 'Claude credentials copied from Keychain'
+                };
+              }
+            }
+          } catch (error) {
+            logger.debug('AuthManager', 'Could not read Claude credentials from Keychain, trying file');
+          }
+        }
+
+        // Try to read from .claude.json file
+        const authPath = path.join(os.homedir(), '.claude.json');
+        try {
+          const content = await fsPromises.readFile(authPath, 'utf-8');
+          // Try to format JSON nicely
+          try {
+            const parsed = JSON.parse(content);
+            return {
+              copyText: JSON.stringify(parsed, null, 2),
+              message: 'Claude credentials (formatted) copied'
+            };
+          } catch {
+            return {
+              copyText: content,
+              message: 'Claude credentials copied'
+            };
+          }
+        } catch (error) {
+          logger.debug('AuthManager', `Claude credentials not found at ${authPath}`);
+          return null;
+        }
+      } else if (toolId === 'codex') {
+        // Try auth.json first
+        const authJsonPath = path.join(os.homedir(), '.codex', 'auth.json');
+        try {
+          const content = await fsPromises.readFile(authJsonPath, 'utf-8');
+          // Try to format JSON nicely
+          try {
+            const parsed = JSON.parse(content);
+            return {
+              copyText: JSON.stringify(parsed, null, 2),
+              message: 'ChatGPT auth.json (formatted) copied'
+            };
+          } catch {
+            return {
+              copyText: content,
+              message: 'ChatGPT auth.json copied'
+            };
+          }
+        } catch {
+          // Try config.toml
+          const configPath = path.join(os.homedir(), '.codex', 'config.toml');
+          try {
+            const content = await fsPromises.readFile(configPath, 'utf-8');
+            return {
+              copyText: content,
+              message: 'ChatGPT config.toml copied'
+            };
+          } catch (error) {
+            logger.debug('AuthManager', `Codex credentials not found at ${authJsonPath} or ${configPath}`);
+            return null;
+          }
+        }
+      } else if (toolId === 'gemini') {
+        const oauthPath = path.join(os.homedir(), '.gemini', 'oauth_creds.json');
+        try {
+          const content = await fsPromises.readFile(oauthPath, 'utf-8');
+          // Try to format JSON nicely
+          try {
+            const parsed = JSON.parse(content);
+            return {
+              copyText: JSON.stringify(parsed, null, 2),
+              message: 'Gemini OAuth credentials (formatted) copied'
+            };
+          } catch {
+            return {
+              copyText: content,
+              message: 'Gemini OAuth credentials copied'
+            };
+          }
+        } catch {
+          // Try settings.json as fallback
+          const settingsPath = path.join(os.homedir(), '.gemini', 'settings.json');
+          try {
+            const content = await fsPromises.readFile(settingsPath, 'utf-8');
+            // Try to format JSON nicely
+            try {
+              const parsed = JSON.parse(content);
+              return {
+                copyText: JSON.stringify(parsed, null, 2),
+                message: 'Gemini settings (formatted) copied'
+              };
+            } catch {
+              return {
+                copyText: content,
+                message: 'Gemini settings copied'
+              };
+            }
+          } catch (error) {
+            logger.debug('AuthManager', `Gemini credentials not found at ${oauthPath} or ${settingsPath}`);
+            return null;
+          }
+        }
+      }
+    } catch (error) {
+      logger.error('AuthManager', `Error getting copyable credentials for ${toolId}`, error);
+    }
+    return null;
   }
 }

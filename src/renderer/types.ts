@@ -35,11 +35,14 @@ export interface WindowAPI {
   logoutTool: (toolId: ToolId) => Promise<AuthResult>;
   checkTool: (toolId: ToolId) => Promise<boolean>;
   checkAuthenticated: (toolId: ToolId) => Promise<boolean>;
+  copyCredentials: (toolId: ToolId) => Promise<AuthResult>;
   onStatusUpdate: (callback: (data: StatusUpdate) => void) => void;
   onLog: (callback: (data: LogEntry) => void) => void;
   onAuthCompleted: (callback: (data: { toolId: ToolId }) => void) => void;
   onPrerequisiteStatus: (callback: (data: PrerequisiteStatus) => void) => void;
   onPrerequisitesReady: (callback: () => void) => void;
+  onToolConnected: (callback: (data: { toolId: ToolId; credentials: any }) => void) => void;
+  onCredentialsStored: (callback: (data: any) => void) => void;
 }
 
 declare global {

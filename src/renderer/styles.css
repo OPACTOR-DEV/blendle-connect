@@ -265,7 +265,8 @@ body {
 }
 
 .connect-btn,
-.disconnect-btn {
+.disconnect-btn,
+.copy-btn {
     flex: 1;
     padding: 12px 20px;
     border-radius: 10px;
@@ -299,6 +300,28 @@ body {
 
 .disconnect-btn:hover {
     background: var(--bg-primary);
+}
+
+.copy-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    min-width: 120px;
+}
+
+.copy-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+}
+
+.copy-btn.success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    animation: pulse 0.5s ease;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
 }
 
 .connect-btn:disabled {

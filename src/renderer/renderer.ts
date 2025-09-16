@@ -3,6 +3,7 @@ import { ToolId, ToolState, LogEntry, StatusUpdate, PrerequisiteStatus } from '.
 class RendererApp {
   private connectButtons: NodeListOf<HTMLButtonElement>;
   private disconnectButtons: NodeListOf<HTMLButtonElement>;
+  private copyButtons: NodeListOf<HTMLButtonElement>;
   private consoleOutput: HTMLElement | null;
   private debugSection: HTMLElement | null;
   private activityLog: HTMLElement | null;
@@ -17,9 +18,16 @@ class RendererApp {
     claude: { connected: false, inProgress: false }
   };
 
+  private storedCredentials: Record<ToolId, any> = {
+    codex: null,
+    gemini: null,
+    claude: null
+  };
+
   constructor() {
     this.connectButtons = document.querySelectorAll('.connect-btn');
     this.disconnectButtons = document.querySelectorAll('.disconnect-btn');
+    this.copyButtons = document.querySelectorAll('.copy-btn');
     this.consoleOutput = document.getElementById('console-output');
     this.debugSection = document.querySelector('.debug-section');
     this.activityLog = document.getElementById('debug-console');
@@ -70,6 +78,7 @@ class RendererApp {
   private updateButtonState(toolId: ToolId, state: 'connecting' | 'connected' | 'error' | 'default'): void {
     const connectBtn = document.querySelector(`#connect-${toolId}`) as HTMLButtonElement;
     const disconnectBtn = document.querySelector(`#logout-${toolId}`) as HTMLButtonElement;
+    const copyBtn = document.querySelector(`#copy-${toolId}`) as HTMLButtonElement;
     const btnText = connectBtn?.querySelector('.btn-text') as HTMLElement;
     const spinner = connectBtn?.querySelector('.spinner') as HTMLElement;
 
@@ -82,11 +91,13 @@ class RendererApp {
         if (spinner) spinner.style.display = 'block';
         connectBtn.classList.add('loading');
         disconnectBtn.style.display = 'none';
+        if (copyBtn) copyBtn.style.display = 'none';
         break;
 
       case 'connected':
         connectBtn.style.display = 'none';
         disconnectBtn.style.display = 'flex';
+        if (copyBtn) copyBtn.style.display = 'flex';
         if (spinner) spinner.style.display = 'none';
         connectBtn.classList.remove('loading');
         this.updateStatus(toolId, 'completed', '✅ Connected successfully!');
@@ -99,6 +110,7 @@ class RendererApp {
         connectBtn.classList.remove('loading');
         connectBtn.style.display = 'flex';
         disconnectBtn.style.display = 'none';
+        if (copyBtn) copyBtn.style.display = 'none';
         break;
 
       default:
@@ -108,6 +120,7 @@ class RendererApp {
         connectBtn.classList.remove('loading');
         connectBtn.style.display = 'flex';
         disconnectBtn.style.display = 'none';
+        if (copyBtn) copyBtn.style.display = 'none';
     }
   }
 
@@ -150,8 +163,9 @@ class RendererApp {
         this.updateButtonState(toolId, 'connected');
 
         if (result.credentials) {
-          this.addLogEntry(toolId, `Credentials extracted successfully:`);
-          this.addLogEntry(toolId, JSON.stringify(result.credentials, null, 2));
+          this.storedCredentials[toolId] = result.credentials;
+          this.addLogEntry(toolId, `✅ Authentication successful!`);
+          this.showCredentialInfo(toolId, result.credentials);
         }
       } else {
         throw new Error(result.error || 'Connection failed');
@@ -221,6 +235,13 @@ class RendererApp {
       });
     });
 
+    this.copyButtons.forEach(button => {
+      button.addEventListener('click', async () => {
+        const toolId = button.dataset.tool as ToolId;
+        await this.copyCredentials(toolId);
+      });
+    });
+
     if (this.toggleDebugBtn && this.activityLog) {
       this.toggleDebugBtn.addEventListener('click', () => {
         this.activityLog!.classList.toggle('collapsed');
@@ -262,6 +283,19 @@ class RendererApp {
       this.checkInitialAuth();
       this.addLogEntry('system', 'System prerequisites verified');
       this.addLogEntry('system', 'Ready to connect to AI CLI tools');
+    });
+
+    window.api.onToolConnected((data: { toolId: ToolId; credentials: any }) => {
+      const { toolId, credentials } = data;
+      this.storedCredentials[toolId] = credentials;
+      this.showCredentialInfo(toolId, credentials);
+    });
+
+    window.api.onCredentialsStored((data: any) => {
+      if (data.toolId && data.credentials) {
+        const toolId = data.toolId as ToolId;
+        this.storedCredentials[toolId] = data.credentials;
+      }
     });
   }
 
@@ -311,6 +345,59 @@ class RendererApp {
       const btnText = button.querySelector('.btn-text') as HTMLElement;
       if (btnText) btnText.textContent = 'Connect';
     });
+  }
+
+  private async copyCredentials(toolId: ToolId): Promise<void> {
+    try {
+      const result = await window.api.copyCredentials(toolId);
+      if (result.success) {
+        this.addLogEntry(toolId, '📋 ' + (result.message || 'Credentials copied to clipboard'));
+
+        // Show a temporary notification with more detail
+        const copyBtn = document.querySelector(`#copy-${toolId}`) as HTMLButtonElement;
+        if (copyBtn) {
+          const originalText = copyBtn.innerHTML;
+          copyBtn.innerHTML = '<span class="btn-icon">✅</span><span>Copied!</span>';
+          copyBtn.classList.add('success');
+          setTimeout(() => {
+            copyBtn.innerHTML = originalText;
+            copyBtn.classList.remove('success');
+          }, 2000);
+        }
+      } else {
+        this.addLogEntry(toolId, `❌ Copy failed: ${result.error}`, true);
+      }
+    } catch (error: any) {
+      this.addLogEntry(toolId, `❌ Copy error: ${error.message}`, true);
+    }
+  }
+
+  private showCredentialInfo(toolId: ToolId, credentials: any): void {
+    if (!credentials) return;
+
+    let info = '';
+    if (toolId === 'claude') {
+      if (credentials.storage === 'macOS Keychain') {
+        info = '🔐 Credentials stored in macOS Keychain (click Copy Info to get credentials)';
+      } else if (credentials.path) {
+        info = `📁 Credentials ready at: ${credentials.path}`;
+      }
+    } else if (toolId === 'codex') {
+      if (credentials.path) {
+        info = `📁 Credentials ready at: ${credentials.path}`;
+      }
+    } else if (toolId === 'gemini') {
+      if (credentials.oauth?.path) {
+        info = `📁 OAuth credentials ready at: ${credentials.oauth.path}`;
+      } else {
+        info = '🔐 OAuth credentials ready';
+      }
+    }
+
+    if (info) {
+      this.addLogEntry(toolId, info);
+      this.addLogEntry(toolId, '💡 Click "Copy Info" to copy full credentials to clipboard');
+    }
   }
 
   async initialize(): Promise<void> {

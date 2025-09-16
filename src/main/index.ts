@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, clipboard } from 'electron';
 import * as path from 'path';
 import { ToolId, StatusUpdate } from './types';
 import { CLI_CONFIGS } from './config/cli-configs';
@@ -126,6 +126,23 @@ ipcMain.handle('extract-credentials', async (_event, toolId: ToolId) => {
   }
 });
 
+ipcMain.handle('copy-credentials', async (_event, toolId: ToolId) => {
+  if (!authManager) return { success: false, error: 'Auth manager not initialized' };
+
+  try {
+    const credentials = await authManager.getCopyableCredentials(toolId);
+    if (!credentials || !credentials.copyText) {
+      return { success: false, error: 'No copyable credentials found' };
+    }
+
+    clipboard.writeText(credentials.copyText);
+    return { success: true, message: credentials.message || 'Credentials copied to clipboard' };
+  } catch (error: any) {
+    logger.error('IPC', `Failed to copy credentials for ${toolId}`, error);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('connect-tool', async (_event, toolId: ToolId) => {
   if (!mainWindow || !toolInstaller || !authManager) {
     return { success: false, error: 'Application not initialized' };
@@ -163,6 +180,12 @@ ipcMain.handle('connect-tool', async (_event, toolId: ToolId) => {
 
       sendStatus('completed', `${CLI_CONFIGS[toolId].name} connected successfully!`);
 
+      // Send connection status update to renderer
+      mainWindow.webContents.send('tool-connected', {
+        toolId,
+        credentials
+      });
+
       return { success: true, credentials };
     }
 
@@ -175,6 +198,12 @@ ipcMain.handle('connect-tool', async (_event, toolId: ToolId) => {
     const credentials = await authManager.extractCredentials(toolId);
 
     sendStatus('completed', `${CLI_CONFIGS[toolId].name} connected successfully!`);
+
+    // Send connection status update to renderer
+    mainWindow.webContents.send('tool-connected', {
+      toolId,
+      credentials
+    });
 
     return { success: true, credentials };
   } catch (error: any) {

@@ -34,12 +34,10 @@ export class ClaudeService {
       // Get the path to the expect script
       const scriptPath = path.join(__dirname, '..', 'scripts', 'claude-login.exp');
 
-      // Create the script if it doesn't exist
-      if (!fs.existsSync(scriptPath)) {
-        const scriptContent = `#!/usr/bin/expect -f
+      const scriptContent = `#!/usr/bin/expect -f
 
 # Claude Code Automated Login Script
-set timeout 60
+set timeout 90
 
 # Clean up existing auth first
 catch {exec pkill -f claude}
@@ -48,53 +46,123 @@ catch {exec security delete-generic-password -s "Claude Code-credentials"}
 # Start Claude
 spawn claude
 
-# Handle initial interaction
-expect {
-    "Choose the text style" {
-        send "\\r"
-        exp_continue
-    }
-    "Select login method" {
-        # Select option 1 (Anthropic account)
-        send "\\r"
+set login_sent 0
+set url_found 0
 
-        # Wait for browser URL
-        expect {
-            -re {(https://[^\\s\\)\\]]+)} {
-                set url $expect_out(1,string)
-                puts "AUTH_URL:$url"
-
-                # Open browser
-                catch {exec open "$url"}
-
-                # Success indicator
-                puts "LOGIN_SUCCESS"
-
-                # Wait a moment for browser to open
-                sleep 3
-                send "\\003"
-            }
-            timeout {
-                puts "LOGIN_FAILED:No URL detected"
-                send "\\003"
-            }
+while { $url_found == 0 } {
+    expect {
+        timeout {
+            puts "LOGIN_FAILED:Timeout waiting for login flow"
+            catch {send "\\003"}
+            exit 1
         }
-    }
-    timeout {
-        puts "LOGIN_FAILED:Initial timeout"
+        eof {
+            break
+        }
+        -re {Do you trust the files in this folder\?} {
+            send "\\r"
+            exp_continue
+        }
+        -re {Yes, proceed} {
+            send "\\r"
+            exp_continue
+        }
+        -re {Enter to confirm} {
+            send "\\r"
+            exp_continue
+        }
+        -re {Choose the text style} {
+            send "\\r"
+            exp_continue
+        }
+        -re {Tips for getting started} {
+            exp_continue
+        }
+        -re {Welcome to Claude Code} {
+            if { $login_sent == 0 } {
+                after 500
+                send "/login\\r"
+                after 300
+                send "\\r"
+                set login_sent 1
+            }
+            exp_continue
+        }
+        -re {Missing API key} {
+            if { $login_sent == 0 } {
+                after 500
+                send "/login\\r"
+                after 300
+                send "\\r"
+                set login_sent 1
+            }
+            exp_continue
+        }
+        -re {Run /login} {
+            if { $login_sent == 0 } {
+                after 500
+                send "/login\\r"
+                after 300
+                send "\\r"
+                set login_sent 1
+            }
+            exp_continue
+        }
+        -re {Sign in with your Anthropic account} {
+            after 200
+            send "\\r"
+            exp_continue
+        }
+        -re {Select login method} {
+            after 200
+            send "\\r"
+            exp_continue
+        }
+        -re {\\\[1\\\].*Anthropic} {
+            after 200
+            send "\\r"
+            exp_continue
+        }
+        -re {(https://[^\\s\\)\\]]+)} {
+            set url $expect_out(1,string)
+            if {[string first "redirect_uri=http%3A%2F%2Flocalhost" $url] == -1} {
+                puts "LOGIN_INFO:Skipping non-localhost URL"
+                exp_continue
+            }
+            set url_found 1
+            puts "AUTH_URL:$url"
+            catch {exec open "$url"}
+            puts "LOGIN_SUCCESS"
+            after 2000
+            catch {send "\\003"}
+            break
+        }
     }
 }
 
 expect eof`;
 
-        // Create scripts directory if it doesn't exist
-        const scriptsDir = path.dirname(scriptPath);
-        if (!fs.existsSync(scriptsDir)) {
-          fs.mkdirSync(scriptsDir, { recursive: true });
-        }
+      // Create scripts directory if it doesn't exist
+      const scriptsDir = path.dirname(scriptPath);
+      if (!fs.existsSync(scriptsDir)) {
+        fs.mkdirSync(scriptsDir, { recursive: true });
+      }
 
+      let shouldWriteScript = true;
+      if (fs.existsSync(scriptPath)) {
+        try {
+          const existingContent = fs.readFileSync(scriptPath, 'utf-8');
+          if (existingContent === scriptContent) {
+            shouldWriteScript = false;
+          }
+        } catch (error) {
+          logger.warn('ClaudeService', 'Failed to read existing expect script, rewriting it', error);
+        }
+      }
+
+      if (shouldWriteScript) {
         fs.writeFileSync(scriptPath, scriptContent);
-        logger.debug('ClaudeService', 'Created expect script at:', scriptPath);
+        logger.debug('ClaudeService', 'Wrote expect script at:', scriptPath);
       }
 
       // Make script executable
@@ -316,70 +384,102 @@ expect eof`;
   }
 
   static async logout(): Promise<{ success: boolean; message: string }> {
-    let credentialsDeleted = false;
+    const credentialRemovalPromise = this.removeStoredCredentials();
+    const cliLogoutPromise = this.runCliLogout();
 
-    // On macOS, delete from Keychain
-    if (process.platform === 'darwin') {
-      try {
-        execSync('security delete-generic-password -s "Claude Code-credentials" 2>/dev/null');
-        logger.debug('ClaudeService', 'Deleted Claude credentials from macOS Keychain');
-        credentialsDeleted = true;
-      } catch {
-        logger.debug('ClaudeService', 'No Claude credentials to delete from Keychain');
-      }
-    } else {
-      // For other platforms, delete .claude.json file
-      const authPath = path.join(os.homedir(), '.claude.json');
-      try {
-        await fs.promises.unlink(authPath);
-        logger.debug('ClaudeService', `Deleted Claude auth file: ${authPath}`);
-        credentialsDeleted = true;
-      } catch {
-        logger.debug('ClaudeService', 'No .claude.json file to delete');
-      }
+    const [cliSuccess, credentialsDeleted] = await Promise.all([cliLogoutPromise, credentialRemovalPromise]);
+
+    if (!cliSuccess) {
+      return {
+        success: false,
+        message: credentialsDeleted ? 'Logout command failed, but credentials were removed' : 'Failed to logout from Claude'
+      };
     }
 
-    // Then also try to logout via CLI command
+    return {
+      success: true,
+      message: credentialsDeleted ? 'Claude logged out and credentials removed' : 'Claude logged out successfully'
+    };
+  }
+
+  private static runCliLogout(): Promise<boolean> {
     return new Promise((resolve) => {
       const logoutProcess = spawn('claude', [], {
         env: EnvironmentManager.getSpawnEnv(),
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
+      let resolved = false;
       let timeout: NodeJS.Timeout;
 
-      const cleanup = () => {
+      const finish = (success: boolean) => {
+        if (resolved) {
+          return;
+        }
+        resolved = true;
         clearTimeout(timeout);
-        logoutProcess.kill();
+
+        if (logoutProcess.exitCode === null) {
+          try {
+            logoutProcess.kill();
+          } catch {
+            // ignore errors on kill
+          }
+        }
+
+        resolve(success);
       };
 
-      // Send /logout command
       setTimeout(() => {
         logger.debug('ClaudeService', 'Sending /logout command');
         logoutProcess.stdin?.write('/logout\n');
       }, 500);
 
-      // Wait a bit then exit
       setTimeout(() => {
         logoutProcess.stdin?.write('/exit\n');
       }, 1500);
 
-      logoutProcess.on('close', () => {
-        cleanup();
-        resolve({ success: true, message: credentialsDeleted ? 'Claude logged out and credentials removed' : 'Claude logged out successfully' });
-      });
+      logoutProcess.on('close', () => finish(true));
+      logoutProcess.on('error', () => finish(false));
 
-      logoutProcess.on('error', () => {
-        cleanup();
-        resolve({ success: false, message: 'Failed to logout from Claude' });
-      });
-
-      // Timeout after 3 seconds
-      timeout = setTimeout(() => {
-        cleanup();
-        resolve({ success: true, message: 'Claude logout completed' });
-      }, 3000);
+      timeout = setTimeout(() => finish(true), 3000);
     });
+  }
+
+  private static removeStoredCredentials(): Promise<boolean> {
+    if (process.platform === 'darwin') {
+      return new Promise((resolve) => {
+        const securityProcess = spawn('security', ['delete-generic-password', '-s', 'Claude Code-credentials'], {
+          stdio: 'ignore'
+        });
+
+        securityProcess.on('close', (code) => {
+          if (code === 0) {
+            logger.debug('ClaudeService', 'Deleted Claude credentials from macOS Keychain');
+            resolve(true);
+          } else {
+            logger.debug('ClaudeService', 'No Claude credentials to delete from Keychain');
+            resolve(false);
+          }
+        });
+
+        securityProcess.on('error', (error) => {
+          logger.error('ClaudeService', 'Failed to delete Claude credentials from macOS Keychain', error);
+          resolve(false);
+        });
+      });
+    }
+
+    const authPath = path.join(os.homedir(), '.claude.json');
+    return fs.promises.unlink(authPath)
+      .then(() => {
+        logger.debug('ClaudeService', `Deleted Claude auth file: ${authPath}`);
+        return true;
+      })
+      .catch(() => {
+        logger.debug('ClaudeService', 'No .claude.json file to delete');
+        return false;
+      });
   }
 
   static async extractCredentials(): Promise<any> {
@@ -393,12 +493,30 @@ expect eof`;
         });
         if (result && result.trim().length > 0) {
           logger.debug('ClaudeService', 'Claude credentials found in macOS Keychain');
-          return {
+
+          // Try to parse the stored credential
+          let credentialInfo: any = {
             status: 'authenticated',
             message: 'Claude Code authenticated successfully',
             storage: 'macOS Keychain',
-            service: 'Claude Code-credentials'
+            service: 'Claude Code-credentials',
+            copyable: false // Keychain items are not directly copyable
           };
+
+          try {
+            const parsed = JSON.parse(result.trim());
+            if (parsed.api_key || parsed.apiKey) {
+              credentialInfo.apiKey = parsed.api_key || parsed.apiKey;
+              credentialInfo.copyable = true;
+            }
+          } catch {
+            // Not JSON format, might be raw token
+            if (result.trim().length > 20) {
+              credentialInfo.hasToken = true;
+            }
+          }
+
+          return credentialInfo;
         }
       } catch {
         // Fall through to default response
@@ -409,16 +527,30 @@ expect eof`;
       try {
         await fs.promises.access(authPath);
         const stats = await fs.promises.stat(authPath);
+        const authData = await fs.promises.readFile(authPath, 'utf-8');
 
         logger.debug('ClaudeService', `Claude credentials found at: ${authPath} (${stats.size} bytes)`);
 
-        return {
+        let credentialInfo: any = {
           status: 'authenticated',
           message: 'Claude Code authenticated successfully',
           path: authPath,
           format: 'json',
-          size: stats.size
+          size: stats.size,
+          copyable: false
         };
+
+        try {
+          const parsed = JSON.parse(authData);
+          if (parsed.api_key || parsed.apiKey) {
+            credentialInfo.apiKey = parsed.api_key || parsed.apiKey;
+            credentialInfo.copyable = true;
+          }
+        } catch {
+          // Unable to parse, just note the file exists
+        }
+
+        return credentialInfo;
       } catch {
         // Fall through to default response
       }
@@ -427,7 +559,8 @@ expect eof`;
     return {
       status: 'authenticated',
       message: 'Claude Code authenticated (verification skipped)',
-      storage: 'unknown'
+      storage: 'unknown',
+      copyable: false
     };
   }
 }
