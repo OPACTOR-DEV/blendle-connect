@@ -2,9 +2,11 @@ import { spawn, execSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import { logger } from '../utils/logger';
 import { EnvironmentManager } from '../utils/environment';
+import { OAuthWindow } from './oauth-window';
+import { CLI_CONFIGS } from '../config/cli-configs';
 
 interface ClaudeLoginOptions {
   mainWindow: BrowserWindow;
@@ -21,9 +23,14 @@ export class ClaudeService {
     onLog('Starting Claude authentication process...');
 
     return new Promise(async (resolve, reject) => {
+      const spawnEnv = EnvironmentManager.getSpawnEnv();
+
       // Check if expect is installed
       try {
-        execSync('which expect', { stdio: 'ignore' });
+        execSync('which expect', {
+          stdio: 'ignore',
+          env: spawnEnv
+        });
       } catch (error) {
         logger.error('ClaudeService', 'expect is not installed');
         onLog('Error: expect is required but not installed. Please install it first.');
@@ -31,8 +38,16 @@ export class ClaudeService {
         return;
       }
 
+      const claudeBinary = this.resolveClaudeBinary(spawnEnv);
+      logger.info('ClaudeService', `Using Claude binary: ${claudeBinary}`);
+
+      // Determine writable directory for the expect script
+      const scriptsDir = app.isPackaged
+        ? path.join(app.getPath('userData'), 'scripts')
+        : path.join(__dirname, '..', 'scripts');
+
       // Get the path to the expect script
-      const scriptPath = path.join(__dirname, '..', 'scripts', 'claude-login.exp');
+      const scriptPath = path.join(scriptsDir, 'claude-login.exp');
 
       const scriptContent = `#!/usr/bin/expect -f
 
@@ -44,7 +59,12 @@ catch {exec pkill -f claude}
 catch {exec security delete-generic-password -s "Claude Code-credentials"}
 
 # Start Claude
-spawn claude
+set claude_path $env(CLAUDE_BIN)
+if { $claude_path eq "" } {
+    set claude_path "claude"
+}
+puts "LOGIN_INFO:Using Claude binary $claude_path"
+spawn $claude_path
 
 set login_sent 0
 set url_found 0
@@ -60,14 +80,17 @@ while { $url_found == 0 } {
             break
         }
         -re {Do you trust the files in this folder\?} {
-            send "\\r"
+            after 200
+            send "1\\r"
             exp_continue
         }
         -re {Yes, proceed} {
-            send "\\r"
+            after 200
+            send "1\\r"
             exp_continue
         }
         -re {Enter to confirm} {
+            after 200
             send "\\r"
             exp_continue
         }
@@ -125,13 +148,12 @@ while { $url_found == 0 } {
         }
         -re {(https://[^\\s\\)\\]]+)} {
             set url $expect_out(1,string)
-            if {[string first "redirect_uri=http%3A%2F%2Flocalhost" $url] == -1} {
-                puts "LOGIN_INFO:Skipping non-localhost URL"
+            if {$url_found == 1} {
                 exp_continue
             }
             set url_found 1
             puts "AUTH_URL:$url"
-            catch {exec open "$url"}
+            # Don't open URL here, let Electron handle it
             puts "LOGIN_SUCCESS"
             after 2000
             catch {send "\\003"}
@@ -143,7 +165,6 @@ while { $url_found == 0 } {
 expect eof`;
 
       // Create scripts directory if it doesn't exist
-      const scriptsDir = path.dirname(scriptPath);
       if (!fs.existsSync(scriptsDir)) {
         fs.mkdirSync(scriptsDir, { recursive: true });
       }
@@ -184,9 +205,13 @@ expect eof`;
       }
 
       // Run the expect script
-      logger.debug('ClaudeService', 'Running expect script:', scriptPath);
+      logger.info('ClaudeService', 'Running expect script:', scriptPath);
       const expectProcess = spawn('expect', [scriptPath], {
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...spawnEnv,
+          CLAUDE_BIN: claudeBinary
+        }
       });
 
       let output = '';
@@ -200,7 +225,7 @@ expect eof`;
         // Clean output for logging
         const cleanOutput = text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
         if (cleanOutput) {
-          logger.debug('ClaudeService', 'Expect output:', cleanOutput);
+          logger.info('ClaudeService', `Expect output: ${cleanOutput}`);
         }
 
         // Check for authentication URL
@@ -209,7 +234,23 @@ expect eof`;
           if (urlMatch) {
             authUrl = urlMatch[1].trim();
             logger.debug('ClaudeService', 'Authentication URL captured:', authUrl);
-            onLog('Opening authentication page in browser...');
+            onLog('Opening authentication page in OAuth window...');
+
+            // Use OAuth window to intercept redirects
+            const config = CLI_CONFIGS['claude'];
+            const oauthWindow = new OAuthWindow('claude', config.port);
+            oauthWindow.open(authUrl).then(() => {
+              logger.info('ClaudeService', 'Claude OAuth window closed');
+              onAuthComplete();
+              if (!resolved) {
+                resolved = true;
+                resolve();
+              }
+            }).catch(err => {
+              logger.error('ClaudeService', 'Claude OAuth window error:', err);
+              // Fallback to opening in default browser
+              shell.openExternal(authUrl);
+            });
           }
         }
 
@@ -279,8 +320,8 @@ expect eof`;
       }, 1000);
 
       expectProcess.on('close', (code) => {
+        logger.info('ClaudeService', `Expect process exited with code ${code}`);
         clearInterval(configCheck);
-        logger.debug('ClaudeService', `Expect process exited with code ${code}`);
 
         if (!resolved) {
           // Check one more time if authenticated
@@ -341,9 +382,12 @@ expect eof`;
     }
 
     // Also check if claude is authenticated by running a simple command
+    const env = EnvironmentManager.getSpawnEnv();
+    const claudeBinary = this.resolveClaudeBinary(env);
+
     return new Promise((resolve) => {
-      const checkProcess = spawn('claude', [], {
-        env: EnvironmentManager.getSpawnEnv(),
+      const checkProcess = spawn(claudeBinary, [], {
+        env,
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
@@ -365,6 +409,7 @@ expect eof`;
       });
 
       checkProcess.on('error', () => {
+        logger.error('ClaudeService', 'Failed to run claude during authentication check');
         cleanup();
         resolve(false);
       });
@@ -404,8 +449,11 @@ expect eof`;
 
   private static runCliLogout(): Promise<boolean> {
     return new Promise((resolve) => {
-      const logoutProcess = spawn('claude', [], {
-        env: EnvironmentManager.getSpawnEnv(),
+      const env = EnvironmentManager.getSpawnEnv();
+      const claudeBinary = this.resolveClaudeBinary(env);
+
+      const logoutProcess = spawn(claudeBinary, [], {
+        env,
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
@@ -440,7 +488,10 @@ expect eof`;
       }, 1500);
 
       logoutProcess.on('close', () => finish(true));
-      logoutProcess.on('error', () => finish(false));
+      logoutProcess.on('error', (err) => {
+        logger.error('ClaudeService', 'Failed to spawn claude for logout', err);
+        finish(false);
+      });
 
       timeout = setTimeout(() => finish(true), 3000);
     });
@@ -480,6 +531,24 @@ expect eof`;
         logger.debug('ClaudeService', 'No .claude.json file to delete');
         return false;
       });
+  }
+
+  private static resolveClaudeBinary(env: NodeJS.ProcessEnv): string {
+    try {
+      const result = execSync('which claude', {
+        env,
+        encoding: 'utf-8'
+      }).trim();
+
+      if (result.length > 0) {
+        return result;
+      }
+    } catch (error) {
+      logger.warn('ClaudeService', 'Unable to resolve Claude binary via which command', error);
+    }
+
+    logger.info('ClaudeService', 'Falling back to claude from PATH');
+    return 'claude';
   }
 
   static async extractCredentials(): Promise<any> {

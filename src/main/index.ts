@@ -4,13 +4,13 @@ import { ToolId, StatusUpdate } from './types';
 import { CLI_CONFIGS } from './config/cli-configs';
 import { ToolInstaller } from './services/tool-installer';
 import { AuthManager } from './services/auth-manager';
-import { PrerequisiteChecker } from './services/prerequisite-checker';
+// import { PrerequisiteChecker } from './services/prerequisite-checker';
 import { logger } from './utils/logger';
 
 let mainWindow: BrowserWindow | null = null;
 let toolInstaller: ToolInstaller | null = null;
 let authManager: AuthManager | null = null;
-let prerequisiteChecker: PrerequisiteChecker | null = null;
+// let prerequisiteChecker: PrerequisiteChecker | null = null;
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -26,7 +26,7 @@ function createWindow(): void {
     icon: path.join(__dirname, '../../assets/icon.png')
   });
 
-  mainWindow.loadFile(path.join(__dirname, '../../src/renderer/index.html'));
+  mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
 
   // Open DevTools in development mode
   if (process.env.NODE_ENV === 'development') {
@@ -35,14 +35,12 @@ function createWindow(): void {
 
   toolInstaller = new ToolInstaller(mainWindow);
   authManager = new AuthManager(mainWindow);
-  prerequisiteChecker = new PrerequisiteChecker(mainWindow);
+  // prerequisiteChecker = new PrerequisiteChecker(mainWindow);
 
-  // Check prerequisites on startup
-  setTimeout(async () => {
-    const prereqsOk = await prerequisiteChecker?.checkAndInstallPrerequisites();
-    if (prereqsOk) {
-      mainWindow?.webContents.send('prerequisites-ready');
-    }
+  // Skip Node.js prerequisite check - Electron includes its own Node runtime
+  // Directly send prerequisites-ready signal
+  setTimeout(() => {
+    mainWindow?.webContents.send('prerequisites-ready');
   }, 1000);
 
   mainWindow.on('closed', () => {
@@ -52,7 +50,7 @@ function createWindow(): void {
     mainWindow = null;
     toolInstaller = null;
     authManager = null;
-    prerequisiteChecker = null;
+    // prerequisiteChecker = null;
     logger.close();
   });
 }

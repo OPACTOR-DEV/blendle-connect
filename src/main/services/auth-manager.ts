@@ -10,6 +10,7 @@ import { EnvironmentManager } from '../utils/environment';
 import { logger } from '../utils/logger';
 import { CallbackServer } from './callback-server';
 import { ClaudeService } from './claude-service';
+import { OAuthWindow } from './oauth-window';
 
 
 export class AuthManager {
@@ -381,8 +382,19 @@ export class AuthManager {
       if (urlMatch) {
         const authUrl = urlMatch[1];
         logger.debug('AuthManager', `Found Gemini auth URL: ${authUrl}`);
-        this.sendLog(toolId, 'Opening authentication page in browser...');
-        shell.openExternal(authUrl);
+        this.sendLog(toolId, 'Opening authentication page in OAuth window...');
+
+        // Use OAuth window to intercept redirects
+        const config = CLI_CONFIGS[toolId];
+        const oauthWindow = new OAuthWindow(toolId, config.port);
+        oauthWindow.open(authUrl).then(() => {
+          logger.info('AuthManager', 'Gemini OAuth window closed');
+          onAuthComplete();
+        }).catch(err => {
+          logger.error('AuthManager', 'Gemini OAuth window error:', err);
+          // Fallback to opening in default browser
+          shell.openExternal(authUrl);
+        });
       }
 
       this.checkForAuthSuccess(output, onAuthComplete);
