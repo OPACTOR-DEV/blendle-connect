@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, clipboard } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 import { ToolId, StatusUpdate } from './types';
 import { CLI_CONFIGS } from './config/cli-configs';
 import { ToolInstaller } from './services/tool-installer';
@@ -214,5 +215,34 @@ ipcMain.handle('connect-tool', async (_event, toolId: ToolId) => {
     });
 
     return { success: false, error: error.message };
+  }
+});
+
+// Handle user info request
+ipcMain.handle('get-user-info', async () => {
+  try {
+    // Check for user info config file next to the app executable
+    const appPath = app.getAppPath();
+    const userConfigPath = path.join(path.dirname(appPath), 'user-config.json');
+
+    // Also check in app directory for development
+    const devConfigPath = path.join(appPath, 'user-config.json');
+
+    let configPath = userConfigPath;
+    if (!fs.existsSync(userConfigPath) && fs.existsSync(devConfigPath)) {
+      configPath = devConfigPath;
+    }
+
+    if (fs.existsSync(configPath)) {
+      const userInfoData = fs.readFileSync(configPath, 'utf8');
+      const userInfo = JSON.parse(userInfoData);
+      return userInfo;
+    }
+
+    // Return null if no user config found
+    return null;
+  } catch (error: any) {
+    logger.error('UserInfo', 'Failed to load user info', error);
+    return null;
   }
 });

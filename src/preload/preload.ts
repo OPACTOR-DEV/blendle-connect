@@ -29,3 +29,7 @@ contextBridge.exposeInMainWorld('api', {
     onCredentialsStored: (callback: (data: any) => void) =>
         ipcRenderer.on('credentials-stored', (_event, data) => callback(data))
 });
+
+contextBridge.exposeInMainWorld('electronAPI', {
+    getUserInfo: () => ipcRenderer.invoke('get-user-info')
+});

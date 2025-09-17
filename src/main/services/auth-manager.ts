@@ -849,8 +849,8 @@ export class AuthManager {
 
   private async storeCredentialsToBackend(toolId: ToolId, credentials: any): Promise<void> {
     try {
-      // Use dummy user ID for now - in production, this should come from actual user authentication
-      const userId = 'dummy-user-id';
+      // Get real user ID from embedded user configuration
+      const userId = await this.getUserId();
 
       // Convert toolId to provider format expected by backend
       let provider: 'claude' | 'codex' | 'gemini';
@@ -1075,5 +1075,41 @@ export class AuthManager {
       logger.error('AuthManager', `Error getting copyable credentials for ${toolId}`, error);
     }
     return null;
+  }
+
+  private async getUserId(): Promise<string> {
+    try {
+      // First try to read from the resources directory (packaged app)
+      const resourcesPath = path.join(process.resourcesPath || app.getAppPath(), 'resources', 'user-config.json');
+      if (fs.existsSync(resourcesPath)) {
+        const userConfig = JSON.parse(await fsPromises.readFile(resourcesPath, 'utf-8'));
+        logger.debug('AuthManager', `Found user config in resources: ${userConfig.userId}`);
+        return userConfig.userId;
+      }
+
+      // Fallback: try to read from app directory (development)
+      const appPath = path.join(app.getAppPath(), 'user-config.json');
+      if (fs.existsSync(appPath)) {
+        const userConfig = JSON.parse(await fsPromises.readFile(appPath, 'utf-8'));
+        logger.debug('AuthManager', `Found user config in app directory: ${userConfig.userId}`);
+        return userConfig.userId;
+      }
+
+      // Last fallback: check in current working directory
+      const cwdPath = path.join(process.cwd(), 'user-config.json');
+      if (fs.existsSync(cwdPath)) {
+        const userConfig = JSON.parse(await fsPromises.readFile(cwdPath, 'utf-8'));
+        logger.debug('AuthManager', `Found user config in cwd: ${userConfig.userId}`);
+        return userConfig.userId;
+      }
+
+      // If no user config found, use dummy user ID as fallback
+      logger.warn('AuthManager', 'No user config found, using dummy user ID');
+      return 'dummy-user-id';
+    } catch (error: any) {
+      logger.error('AuthManager', 'Error reading user configuration:', error.message);
+      // Return dummy user ID as fallback
+      return 'dummy-user-id';
+    }
   }
 }

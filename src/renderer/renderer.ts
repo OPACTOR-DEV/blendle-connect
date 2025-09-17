@@ -34,8 +34,9 @@ class RendererApp {
 
     this.initializeEventListeners();
     this.initializeIPCHandlers();
-    // Check initial auth status immediately
+    // Load user info and check initial auth status
     setTimeout(() => {
+      this.loadUserInfo();
       this.checkInitialAuth();
     }, 500);
   }
@@ -512,6 +513,36 @@ class RendererApp {
     this.toolStates[toolId] = { connected: true, inProgress: false };
     this.updateButtonState(toolId, 'connected');
     this.addLogEntry(toolId, `${toolName} authentication completed successfully!`);
+  }
+
+  private async loadUserInfo(): Promise<void> {
+    try {
+      // Request user info from main process
+      const userInfo = await (window as any).electronAPI.getUserInfo();
+      this.displayUserInfo(userInfo);
+    } catch (error) {
+      console.log('No user info available, showing default');
+      this.displayUserInfo(null);
+    }
+  }
+
+  private displayUserInfo(userInfo: any): void {
+    const userNameElement = document.getElementById('user-name');
+    const userEmailElement = document.getElementById('user-email');
+
+    if (!userNameElement || !userEmailElement) {
+      return;
+    }
+
+    if (userInfo && userInfo.name && userInfo.email) {
+      // User info available
+      userNameElement.textContent = userInfo.name;
+      userEmailElement.textContent = userInfo.email;
+    } else {
+      // No user info
+      userNameElement.textContent = 'No User';
+      userEmailElement.textContent = '';
+    }
   }
 }
 
