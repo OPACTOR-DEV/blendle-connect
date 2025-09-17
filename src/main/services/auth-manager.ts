@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import { BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { ToolId, Credentials } from '../types';
 import { CLI_CONFIGS } from '../config/cli-configs';
 import { EnvironmentManager } from '../utils/environment';
@@ -11,15 +11,18 @@ import { logger } from '../utils/logger';
 import { CallbackServer } from './callback-server';
 import { ClaudeService } from './claude-service';
 import { OAuthWindow } from './oauth-window';
+import { ApiClient, StoreTokenRequest } from './api-client';
 
 
 export class AuthManager {
   private mainWindow: BrowserWindow;
   private callbackServer: CallbackServer;
+  private apiClient: ApiClient;
 
   constructor(mainWindow: BrowserWindow) {
     this.mainWindow = mainWindow;
     this.callbackServer = new CallbackServer(mainWindow);
+    this.apiClient = new ApiClient();
   }
 
   async checkAuthenticated(toolId: ToolId): Promise<boolean> {
@@ -200,13 +203,28 @@ export class AuthManager {
       }
 
       // Use the existing standalone expect script
-      const scriptPath = path.join(__dirname, '..', 'scripts', 'codex-login.exp');
+      const packagedScriptPath = path.join(__dirname, '..', 'scripts', 'codex-login.exp');
 
-      // Check if the script exists
-      if (!fs.existsSync(scriptPath)) {
-        logger.error('AuthManager', 'Codex expect script not found at:', scriptPath);
-        reject(new Error(`Expect script not found at ${scriptPath}`));
+      if (!fs.existsSync(packagedScriptPath)) {
+        logger.error('AuthManager', 'Codex expect script not found at:', packagedScriptPath);
+        reject(new Error(`Expect script not found at ${packagedScriptPath}`));
         return;
+      }
+
+      let scriptPath = packagedScriptPath;
+
+      if (app.isPackaged) {
+        try {
+          const userScriptsDir = path.join(app.getPath('userData'), 'scripts');
+          fs.mkdirSync(userScriptsDir, { recursive: true });
+          const extractedScriptPath = path.join(userScriptsDir, 'codex-login.exp');
+          fs.copyFileSync(packagedScriptPath, extractedScriptPath);
+          scriptPath = extractedScriptPath;
+        } catch (copyError) {
+          logger.error('AuthManager', 'Failed to extract Codex expect script:', copyError);
+          reject(new Error('Failed to prepare automation script for Codex login.'));
+          return;
+        }
       }
 
       // Make sure script is executable
@@ -566,6 +584,8 @@ export class AuthManager {
       const credentials = await ClaudeService.extractCredentials();
       // Store credentials for later copy functionality
       await this.storeCredentials(toolId, credentials);
+      // Store credentials to backend
+      await this.storeCredentialsToBackend(toolId, credentials);
       return credentials;
     } else if (toolId === 'codex') {
       const possiblePaths = [
@@ -605,6 +625,8 @@ export class AuthManager {
 
           // Store for later copy functionality
           await this.storeCredentials(toolId, credentials);
+          // Store credentials to backend
+          await this.storeCredentialsToBackend(toolId, credentials);
           return credentials;
         } catch {
           continue;
@@ -642,6 +664,8 @@ export class AuthManager {
 
       // Store for later copy functionality
       await this.storeCredentials(toolId, credentials);
+      // Store credentials to backend
+      await this.storeCredentialsToBackend(toolId, credentials);
       return credentials;
     }
 
@@ -821,6 +845,106 @@ export class AuthManager {
       return await this.extractCredentials(toolId);
     }
     return null;
+  }
+
+  private async storeCredentialsToBackend(toolId: ToolId, credentials: any): Promise<void> {
+    try {
+      // Use dummy user ID for now - in production, this should come from actual user authentication
+      const userId = 'dummy-user-id';
+
+      // Convert toolId to provider format expected by backend
+      let provider: 'claude' | 'codex' | 'gemini';
+      switch (toolId) {
+        case 'claude':
+          provider = 'claude';
+          break;
+        case 'codex':
+          provider = 'codex';
+          break;
+        case 'gemini':
+          provider = 'gemini';
+          break;
+        default:
+          logger.warn('AuthManager', `Unknown toolId for backend storage: ${toolId}`);
+          return;
+      }
+
+      // Prepare token data
+      let tokenData: string;
+      let originalPath: string | undefined;
+      let format: string = 'json';
+      let metadata: any = {};
+
+      if (toolId === 'claude') {
+        // For Claude, we might have the raw credentials or need to read from keychain
+        if (typeof credentials === 'object') {
+          tokenData = JSON.stringify(credentials);
+        } else {
+          tokenData = credentials;
+        }
+        originalPath = path.join(os.homedir(), '.claude.json');
+        metadata = {
+          provider: 'claude',
+          storage: credentials.storage || 'keychain',
+          extractedAt: new Date().toISOString(),
+        };
+      } else if (toolId === 'codex') {
+        // For Codex, use the raw data and path information
+        if (credentials.raw) {
+          tokenData = credentials.raw;
+        } else {
+          tokenData = JSON.stringify(credentials);
+        }
+        originalPath = credentials.path;
+        format = credentials.format || 'json';
+        metadata = {
+          provider: 'codex',
+          apiKey: credentials.apiKey ? '***' : undefined,
+          extractedAt: new Date().toISOString(),
+        };
+      } else if (toolId === 'gemini') {
+        // For Gemini, store the OAuth credentials
+        if (credentials.oauth) {
+          tokenData = JSON.stringify(credentials.oauth);
+          originalPath = credentials.oauth.path;
+        } else {
+          tokenData = JSON.stringify(credentials);
+        }
+        metadata = {
+          provider: 'gemini',
+          storage: credentials.storage || 'oauth',
+          extractedAt: new Date().toISOString(),
+        };
+      } else {
+        logger.warn('AuthManager', `Unsupported toolId for backend storage: ${toolId}`);
+        return;
+      }
+
+      const storeRequest: StoreTokenRequest = {
+        provider,
+        userId,
+        tokenData,
+        originalPath,
+        format,
+        metadata,
+      };
+
+      logger.info('AuthManager', `Storing credentials for ${provider} to backend...`);
+      this.sendLog(toolId, `Storing credentials to backend API...`);
+
+      const result = await this.apiClient.storeToken(storeRequest);
+
+      if (result.success) {
+        logger.info('AuthManager', `Successfully stored ${provider} credentials to backend`);
+        this.sendLog(toolId, `Credentials stored to backend successfully`);
+      } else {
+        logger.error('AuthManager', `Failed to store ${provider} credentials:`, result.message);
+        this.sendLog(toolId, `Failed to store credentials to backend: ${result.message}`);
+      }
+    } catch (error: any) {
+      logger.error('AuthManager', `Error storing credentials to backend for ${toolId}:`, error.message);
+      this.sendLog(toolId, `Error storing credentials to backend: ${error.message}`);
+    }
   }
 
   async getCopyableCredentials(toolId: ToolId): Promise<{ copyText: string; message: string } | null> {

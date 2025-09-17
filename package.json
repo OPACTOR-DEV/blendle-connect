@@ -4,8 +4,8 @@
   "description": "Connect to ChatGPT, Claude, and Gemini AI services",
   "main": "dist/main/index.js",
   "scripts": {
-    "build:ts": "tsc && tsc -p tsconfig.renderer.json && cp src/renderer/index.html dist/renderer/ && cp src/renderer/styles.css dist/renderer/",
-    "clean": "rm -rf dist",
+    "build:ts": "tsc && tsc -p tsconfig.renderer.json && node scripts/copy-static.js",
+    "clean": "node scripts/clean.js",
     "start": "npm run build:ts && electron .",
     "dev": "npm run build:ts && NODE_ENV=development electron .",
     "build": "npm run build:ts && electron-builder",
