@@ -267,6 +267,10 @@ class RendererApp {
       this.addLogEntry(toolId, 'Authentication completed successfully!');
     });
 
+    window.api.onShowSuccessScreen((data: { toolId: ToolId; toolName: string }) => {
+      this.showSuccessScreen(data.toolId, data.toolName);
+    });
+
     window.api.onPrerequisiteStatus((data: PrerequisiteStatus) => {
       this.handlePrerequisiteStatus(data);
     });
@@ -381,6 +385,171 @@ class RendererApp {
 
     // Prerequisites will be checked automatically by main process
     // When ready, onPrerequisitesReady callback will be triggered
+  }
+
+  private showSuccessScreen(toolId: ToolId, toolName: string): void {
+    // Create success overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'success-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      animation: fadeIn 0.3s ease-out;
+    `;
+
+    // Create success modal
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      background: rgba(20, 20, 20, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 40px;
+      text-align: center;
+      max-width: 400px;
+      margin: 20px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      position: relative;
+      animation: slideIn 0.4s ease-out;
+    `;
+
+    modal.innerHTML = `
+      <div style="
+        width: 60px;
+        height: 60px;
+        margin: 0 auto 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: pulse 2s ease-in-out infinite;
+      ">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3">
+          <path d="M20 6L9 17l-5-5"/>
+        </svg>
+      </div>
+      <h2 style="
+        color: #ffffff;
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        letter-spacing: -0.5px;
+      ">Authentication Complete!</h2>
+      <div style="
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: rgba(102, 126, 234, 0.1);
+        border: 1px solid rgba(102, 126, 234, 0.3);
+        border-radius: 20px;
+        color: #667eea;
+        font-size: 14px;
+        font-weight: 500;
+        margin-bottom: 16px;
+      ">
+        <span style="
+          width: 6px;
+          height: 6px;
+          background: #667eea;
+          border-radius: 50%;
+          animation: blink 2s ease-in-out infinite;
+        "></span>
+        Connected
+      </div>
+      <p style="
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 16px;
+        line-height: 1.5;
+        margin-bottom: 24px;
+      ">
+        <strong style="
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        ">${toolName}</strong> has been successfully authenticated and is ready to use.
+      </p>
+      <button id="success-close-btn" style="
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        color: white;
+        font-weight: 500;
+        cursor: pointer;
+        transition: transform 0.2s ease;
+      ">Continue</button>
+    `;
+
+    // Add CSS animations
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes slideIn {
+        from { transform: scale(0.9) translateY(20px); opacity: 0; }
+        to { transform: scale(1) translateY(0); opacity: 1; }
+      }
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+      @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+      }
+      #success-close-btn:hover {
+        transform: translateY(-1px);
+      }
+    `;
+    document.head.appendChild(style);
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    // Close handlers
+    const closeSuccess = () => {
+      overlay.style.animation = 'fadeIn 0.2s ease-out reverse';
+      setTimeout(() => {
+        if (overlay.parentNode) {
+          overlay.parentNode.removeChild(overlay);
+        }
+        if (style.parentNode) {
+          style.parentNode.removeChild(style);
+        }
+      }, 200);
+    };
+
+    // Close on button click
+    const closeBtn = modal.querySelector('#success-close-btn');
+    closeBtn?.addEventListener('click', closeSuccess);
+
+    // Close on overlay click
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        closeSuccess();
+      }
+    });
+
+    // Auto-close after 5 seconds
+    setTimeout(closeSuccess, 5000);
+
+    // Update tool state
+    this.toolStates[toolId] = { connected: true, inProgress: false };
+    this.updateButtonState(toolId, 'connected');
+    this.addLogEntry(toolId, `${toolName} authentication completed successfully!`);
   }
 }
 

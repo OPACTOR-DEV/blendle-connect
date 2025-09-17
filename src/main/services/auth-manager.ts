@@ -92,6 +92,11 @@ export class AuthManager {
       onLog: (message) => this.sendLog(toolId, message),
       onAuthComplete: () => {
         logger.info('AuthManager', 'Claude authentication completed');
+        // Show in-app success notification
+        this.mainWindow.webContents.send('show-success-screen', {
+          toolId: 'claude',
+          toolName: 'Claude Code'
+        });
       }
     });
   }
@@ -139,6 +144,11 @@ export class AuthManager {
 
       this.setupGeminiHandlers(login, toolId, () => {
         authCompleted = true;
+        // Show in-app success notification
+        this.mainWindow.webContents.send('show-success-screen', {
+          toolId,
+          toolName: 'Gemini CLI'
+        });
         if (!resolved) {
           resolved = true;
           resolve();
@@ -243,6 +253,12 @@ export class AuthManager {
         if (text.includes('LOGIN_SUCCESS')) {
           logger.debug('AuthManager', 'Codex login flow completed successfully');
           this.sendLog(toolId, 'Authentication completed successfully!');
+
+          // Show in-app success notification
+          this.mainWindow.webContents.send('show-success-screen', {
+            toolId,
+            toolName: 'Codex CLI'
+          });
 
           // Wait a bit then check if authenticated
           setTimeout(() => {

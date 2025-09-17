@@ -74,6 +74,10 @@ export class OAuthWindow {
       return;
     }
 
+    const parsedUrl = this.parseUrlSafely(url);
+    const hostname = parsedUrl?.hostname ?? '';
+    const isTrustedHost = this.isTrustedSuccessHost(hostname);
+
     const lowerUrl = url.toLowerCase();
 
     // Tool-specific success patterns
@@ -95,10 +99,11 @@ export class OAuthWindow {
       /authenticated/i
     ];
 
-    const matchesToolSpecific = toolSpecificSuccess[this.toolId].some(pattern => pattern.test(url));
-    const matchesGeneric = genericSuccessPatterns.some(pattern => pattern.test(url));
+    const toolPatterns = toolSpecificSuccess[this.toolId] ?? [];
+    const matchesToolSpecific = isTrustedHost && toolPatterns.some(pattern => pattern.test(url));
+    const matchesGeneric = isTrustedHost && genericSuccessPatterns.some(pattern => pattern.test(url));
 
-    if (matchesToolSpecific || matchesGeneric) {
+    if (isTrustedHost && (matchesToolSpecific || matchesGeneric)) {
       logger.info('OAuthWindow', `Authentication success detected for ${this.toolId}`);
       this.completed = true;
 
@@ -166,5 +171,37 @@ export class OAuthWindow {
       this.authWindow.close();
       this.authWindow = null;
     }
+  }
+
+  private parseUrlSafely(rawUrl: string): URL | null {
+    if (!rawUrl) {
+      return null;
+    }
+
+    try {
+      return new URL(rawUrl);
+    } catch {
+      try {
+        return new URL(rawUrl, 'http://localhost');
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  private isTrustedSuccessHost(hostname: string): boolean {
+    if (!hostname) {
+      return false;
+    }
+
+    const basePatterns = [/^localhost$/i];
+    const toolPatterns: Record<ToolId, RegExp[]> = {
+      claude: [/^console\.anthropic\.com$/i],
+      gemini: [/^developers\.google\.com$/i, /^accounts\.google\.com$/i],
+      codex: []
+    };
+
+    const patterns = basePatterns.concat(toolPatterns[this.toolId] ?? []);
+    return patterns.some(pattern => pattern.test(hostname));
   }
 }

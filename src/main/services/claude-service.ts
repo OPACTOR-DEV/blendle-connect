@@ -2,11 +2,9 @@ import { spawn, execSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { logger } from '../utils/logger';
 import { EnvironmentManager } from '../utils/environment';
-import { OAuthWindow } from './oauth-window';
-import { CLI_CONFIGS } from '../config/cli-configs';
 
 interface ClaudeLoginOptions {
   mainWindow: BrowserWindow;
@@ -153,7 +151,7 @@ while { $url_found == 0 } {
             }
             set url_found 1
             puts "AUTH_URL:$url"
-            # Don't open URL here, let Electron handle it
+            # Surface login URL so Blendle Connect can notify user
             puts "LOGIN_SUCCESS"
             after 2000
             catch {send "\\003"}
@@ -215,8 +213,80 @@ expect eof`;
       });
 
       let output = '';
-      let authUrl = '';
       let resolved = false;
+      let credentialPoll: NodeJS.Timeout | null = null;
+      let timeoutHandle: NodeJS.Timeout | null = null;
+      let authPollingStarted = false;
+
+      const cleanup = () => {
+        if (credentialPoll) {
+          clearInterval(credentialPoll);
+          credentialPoll = null;
+        }
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = null;
+        }
+      };
+
+      const completeSuccess = () => {
+        if (resolved) {
+          return;
+        }
+        resolved = true;
+        cleanup();
+        try {
+          expectProcess.kill();
+        } catch {
+          // Ignore errors if process already exited
+        }
+        onAuthComplete();
+        resolve();
+      };
+
+      const fail = (message: string) => {
+        if (resolved) {
+          return;
+        }
+        resolved = true;
+        cleanup();
+        try {
+          expectProcess.kill();
+        } catch {
+          // Ignore kill errors when process already exited
+        }
+        reject(new Error(message));
+      };
+
+      const verifyCredentials = () => {
+        if (resolved) {
+          return;
+        }
+        this.checkAuthenticated().then(isAuth => {
+          if (isAuth) {
+            logger.info('ClaudeService', 'Credential verification succeeded');
+            completeSuccess();
+          }
+        }).catch(error => {
+          const message = error instanceof Error ? error.message : String(error);
+          logger.debug('ClaudeService', `Credential verification error: ${message}`);
+        });
+      };
+
+      const startCredentialPolling = () => {
+        if (authPollingStarted) {
+          return;
+        }
+        authPollingStarted = true;
+        verifyCredentials();
+        credentialPoll = setInterval(() => {
+          verifyCredentials();
+        }, 1000);
+      };
+
+      timeoutHandle = setTimeout(() => {
+        fail('Claude login process timed out while waiting for credentials');
+      }, 120000);
 
       expectProcess.stdout?.on('data', (data) => {
         const text = data.toString();
@@ -232,25 +302,10 @@ expect eof`;
         if (text.includes('AUTH_URL:')) {
           const urlMatch = text.match(/AUTH_URL:(.+)/);
           if (urlMatch) {
-            authUrl = urlMatch[1].trim();
+            const authUrl = urlMatch[1].trim();
             logger.debug('ClaudeService', 'Authentication URL captured:', authUrl);
-            onLog('Opening authentication page in OAuth window...');
-
-            // Use OAuth window to intercept redirects
-            const config = CLI_CONFIGS['claude'];
-            const oauthWindow = new OAuthWindow('claude', config.port);
-            oauthWindow.open(authUrl).then(() => {
-              logger.info('ClaudeService', 'Claude OAuth window closed');
-              onAuthComplete();
-              if (!resolved) {
-                resolved = true;
-                resolve();
-              }
-            }).catch(err => {
-              logger.error('ClaudeService', 'Claude OAuth window error:', err);
-              // Fallback to opening in default browser
-              shell.openExternal(authUrl);
-            });
+            onLog('Continue authentication in your browser.');
+            startCredentialPolling();
           }
         }
 
@@ -258,19 +313,7 @@ expect eof`;
         if (text.includes('LOGIN_SUCCESS')) {
           logger.debug('ClaudeService', 'Login flow completed successfully');
           onLog('Browser opened successfully. Please complete authentication in your browser.');
-
-          // Wait a bit then check if authenticated
-          setTimeout(() => {
-            this.checkAuthenticated().then(isAuth => {
-              if (isAuth) {
-                onAuthComplete();
-                if (!resolved) {
-                  resolved = true;
-                  resolve();
-                }
-              }
-            });
-          }, 2000);
+          startCredentialPolling();
         }
 
         // Check for failure
@@ -279,10 +322,7 @@ expect eof`;
           const errorMsg = reason ? reason[1] : 'Unknown reason';
           logger.error('ClaudeService', 'Login failed:', errorMsg);
           onLog(`Login failed: ${errorMsg}`);
-          if (!resolved) {
-            resolved = true;
-            reject(new Error(`Login failed: ${errorMsg}`));
-          }
+          fail(`Login failed: ${errorMsg}`);
         }
       });
 
@@ -293,65 +333,14 @@ expect eof`;
 
       expectProcess.on('error', (error) => {
         logger.error('ClaudeService', 'Expect process error:', error);
-        if (!resolved) {
-          resolved = true;
-          reject(new Error(`Expect process error: ${error.message}`));
-        }
+        fail(`Expect process error: ${error.message}`);
       });
-
-      // Check for auth creation periodically
-      const configCheck = setInterval(() => {
-        if (process.platform === 'darwin') {
-          try {
-            const result = execSync('security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null', {
-              encoding: 'utf-8'
-            });
-            if (result && result.trim().length > 0 && !resolved) {
-              logger.info('ClaudeService', 'Detected Claude credentials in macOS Keychain');
-              clearInterval(configCheck);
-              onAuthComplete();
-              resolved = true;
-              resolve();
-            }
-          } catch {
-            // Not found yet, keep checking
-          }
-        }
-      }, 1000);
 
       expectProcess.on('close', (code) => {
         logger.info('ClaudeService', `Expect process exited with code ${code}`);
-        clearInterval(configCheck);
-
-        if (!resolved) {
-          // Check one more time if authenticated
-          setTimeout(() => {
-            this.checkAuthenticated().then(isAuth => {
-              if (!resolved) {
-                resolved = true;
-                if (isAuth) {
-                  onAuthComplete();
-                  resolve();
-                } else if (code === 0) {
-                  resolve(); // Script completed successfully
-                } else {
-                  reject(new Error(`Expect script failed with code ${code}`));
-                }
-              }
-            });
-          }, 1000);
-        }
+        startCredentialPolling();
+        verifyCredentials();
       });
-
-      // Timeout after 60 seconds
-      setTimeout(() => {
-        clearInterval(configCheck);
-        if (!resolved) {
-          resolved = true;
-          expectProcess.kill();
-          reject(new Error('Claude login process timed out'));
-        }
-      }, 60000);
     });
   }
 

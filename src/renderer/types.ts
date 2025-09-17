@@ -39,6 +39,7 @@ export interface WindowAPI {
   onStatusUpdate: (callback: (data: StatusUpdate) => void) => void;
   onLog: (callback: (data: LogEntry) => void) => void;
   onAuthCompleted: (callback: (data: { toolId: ToolId }) => void) => void;
+  onShowSuccessScreen: (callback: (data: { toolId: ToolId; toolName: string }) => void) => void;
   onPrerequisiteStatus: (callback: (data: PrerequisiteStatus) => void) => void;
   onPrerequisitesReady: (callback: () => void) => void;
   onToolConnected: (callback: (data: { toolId: ToolId; credentials: any }) => void) => void;
