@@ -221,11 +221,35 @@ ipcMain.handle('connect-tool', async (_event, toolId: ToolId) => {
 // Handle user info request
 ipcMain.handle('get-user-info', async () => {
   try {
-    // Check for user info config file next to the app executable
+    // Method 1: Extract user info from executable path/name
+    const execPath = process.execPath;
+    const execName = path.basename(execPath);
+
+    // Check if executable name contains encoded user info
+    const userInfo = extractUserInfoFromFilename(execName);
+    if (userInfo) {
+      return userInfo;
+    }
+
+    // Method 2: Check for command line arguments
+    const args = process.argv;
+    const userEmailArg = args.find(arg => arg.startsWith('--user-email='));
+    const userNameArg = args.find(arg => arg.startsWith('--user-name='));
+    const userIdArg = args.find(arg => arg.startsWith('--user-id='));
+
+    if (userEmailArg && userNameArg && userIdArg) {
+      return {
+        email: userEmailArg.split('=')[1],
+        name: userNameArg.split('=')[1],
+        userId: userIdArg.split('=')[1],
+        downloadedAt: new Date().toISOString(),
+        source: 'command-line'
+      };
+    }
+
+    // Method 3: Check for user info config file
     const appPath = app.getAppPath();
     const userConfigPath = path.join(path.dirname(appPath), 'user-config.json');
-
-    // Also check in app directory for development
     const devConfigPath = path.join(appPath, 'user-config.json');
 
     let configPath = userConfigPath;
@@ -246,3 +270,39 @@ ipcMain.handle('get-user-info', async () => {
     return null;
   }
 });
+
+// Extract user info from filename
+function extractUserInfoFromFilename(filename: string): any {
+  try {
+    // Look for pattern: freerider-connect-{platform}-{base64-encoded-user-info}.{ext}
+    const match = filename.match(/freerider-connect-(\w+)-([A-Za-z0-9\-_]+)/);
+    if (match) {
+      let encodedUserInfo = match[2];
+
+      // Restore base64 padding and characters
+      encodedUserInfo = encodedUserInfo
+        .replace(/-/g, '+')  // Restore + from -
+        .replace(/_/g, '/'); // Restore / from _
+
+      // Add padding if needed
+      while (encodedUserInfo.length % 4) {
+        encodedUserInfo += '=';
+      }
+
+      const decodedUserInfo = Buffer.from(encodedUserInfo, 'base64').toString('utf8');
+      const userInfo = JSON.parse(decodedUserInfo);
+
+      logger.info('UserInfo', `Extracted user info from filename: ${userInfo.email}`);
+
+      return {
+        ...userInfo,
+        source: 'filename'
+      };
+    }
+
+    return null;
+  } catch (error) {
+    logger.error('UserInfo', 'Failed to extract user info from filename', error);
+    return null;
+  }
+}
