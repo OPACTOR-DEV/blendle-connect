@@ -66,9 +66,11 @@ export class AuthManager {
     logger.info('AuthManager', `Starting ${config.name} login process`);
     this.sendLog(toolId, `Starting ${config.name} login process...`);
 
-
-    await this.callbackServer.setupCallbackServer(toolId);
-    await new Promise(r => setTimeout(r, 500));
+    // Codex uses its own local server on port 1455, so don't start callback server
+    if (toolId !== 'codex') {
+      await this.callbackServer.setupCallbackServer(toolId);
+      await new Promise(r => setTimeout(r, 500));
+    }
 
     if (toolId === 'claude') {
       logger.debug('AuthManager', 'Performing Claude login...');
@@ -159,97 +161,177 @@ export class AuthManager {
   }
 
   private async performCodexLogin(toolId: ToolId): Promise<void> {
-    logger.debug('AuthManager', 'Codex re-authentication: logout first');
+    logger.debug('AuthManager', 'Codex re-authentication using expect script');
 
     await this.logoutCodex();
 
-    return new Promise((resolve, reject) => {
-      const config = CLI_CONFIGS[toolId];
-      const [cmd, ...args] = config.loginCmd;
-      const env = EnvironmentManager.getSpawnEnv();
+    return new Promise(async (resolve, reject) => {
+      const spawnEnv = EnvironmentManager.getSpawnEnv();
 
-      const login = spawn(cmd, args, {
-        env,
-        stdio: ['pipe', 'pipe', 'pipe']
+      // Check if expect is installed
+      try {
+        execSync('which expect', {
+          stdio: 'ignore',
+          env: spawnEnv
+        });
+      } catch (error) {
+        logger.error('AuthManager', 'expect is not installed');
+        this.sendLog(toolId, 'Error: expect is required but not installed. Please install it first.');
+        reject(new Error('expect is not installed. Please install it with: brew install expect'));
+        return;
+      }
+
+      // Use the existing standalone expect script
+      const scriptPath = path.join(__dirname, '..', 'scripts', 'codex-login.exp');
+
+      // Check if the script exists
+      if (!fs.existsSync(scriptPath)) {
+        logger.error('AuthManager', 'Codex expect script not found at:', scriptPath);
+        reject(new Error(`Expect script not found at ${scriptPath}`));
+        return;
+      }
+
+      // Make sure script is executable
+      try {
+        fs.chmodSync(scriptPath, '755');
+      } catch (error) {
+        logger.error('AuthManager', 'Failed to make Codex script executable:', error);
+      }
+
+      logger.info('AuthManager', 'Running Codex expect script:', scriptPath);
+      const expectProcess = spawn('expect', [scriptPath], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: spawnEnv
       });
 
-      let authCompleted = false;
+      let output = '';
+      let authUrl = '';
       let resolved = false;
 
-      const authCompletedHandler = (_event: any, data: any) => {
-        if (data.toolId === toolId) {
-          logger.debug('AuthManager', `Auth completed signal received for ${toolId}`);
-          authCompleted = true;
+      expectProcess.stdout?.on('data', (data) => {
+        const text = data.toString();
+        output += text;
+
+        // Clean output for logging
+        const cleanOutput = text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
+        if (cleanOutput) {
+          logger.info('AuthManager', `Codex expect output: ${cleanOutput}`);
         }
-      };
 
-      ipcMain.once(`auth-completed-${toolId}`, authCompletedHandler);
+        // Check for authentication URL
+        if (text.includes('AUTH_URL:')) {
+          const urlMatch = text.match(/AUTH_URL:(.+)/);
+          if (urlMatch) {
+            authUrl = urlMatch[1].trim();
+            logger.debug('AuthManager', 'Codex authentication URL captured:', authUrl);
+            this.sendLog(toolId, 'Browser should open automatically for authentication...');
 
-      // Also check for auth file creation directly for faster detection
-      const authFileCheck = setInterval(async () => {
-        try {
-          const authPath = path.join(os.homedir(), '.codex', 'auth.json');
-          const configPath = path.join(os.homedir(), '.codex', 'config.toml');
-
-          // Check if either auth file exists
-          const authExists = fs.existsSync(authPath);
-          const configExists = fs.existsSync(configPath);
-
-          if ((authExists || configExists) && !authCompleted) {
-            logger.info('AuthManager', 'Detected Codex auth file on disk');
-            authCompleted = true;
-            clearInterval(authFileCheck);
+            // Don't open browser manually - codex login already opens it
+            // Just log that we detected the URL for user information
           }
-        } catch (error) {
-          // Ignore errors in file checking
         }
-      }, 250); // Check every 250ms for faster detection
 
-      const loginTimeout = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          clearInterval(authFileCheck);
-          ipcMain.removeListener(`auth-completed-${toolId}`, authCompletedHandler);
-          login.kill();
-          reject(new Error('Login process timed out'));
+        // Log meaningful output to UI
+        if (text.includes('LOGIN_INFO:')) {
+          const infoMatch = text.match(/LOGIN_INFO:(.+)/);
+          if (infoMatch) {
+            this.sendLog(toolId, infoMatch[1].trim());
+          }
         }
-      }, 5 * 60 * 1000);
 
-      this.setupStandardHandlers(login, toolId, () => {
-        authCompleted = true;
-      });
+        // Check for success indicator
+        if (text.includes('LOGIN_SUCCESS')) {
+          logger.debug('AuthManager', 'Codex login flow completed successfully');
+          this.sendLog(toolId, 'Authentication completed successfully!');
 
-      const checkAuth = setInterval(async () => {
-        if (authCompleted && !resolved) {
-          resolved = true;
-          clearInterval(checkAuth);
-          clearInterval(authFileCheck);
-          clearTimeout(loginTimeout);
-          ipcMain.removeListener(`auth-completed-${toolId}`, authCompletedHandler);
-
-          // Reduce delay to 500ms for faster response
+          // Wait a bit then check if authenticated
           setTimeout(() => {
-            login.kill('SIGTERM');
-            resolve();
-          }, 500);
+            this.checkAuthenticated(toolId).then(isAuth => {
+              if (isAuth && !resolved) {
+                resolved = true;
+                resolve();
+              }
+            });
+          }, 2000);
         }
-      }, 100); // Check more frequently (every 100ms)
 
-      login.on('exit', (code) => {
-        clearInterval(checkAuth);
-        clearInterval(authFileCheck);
-        clearTimeout(loginTimeout);
-        ipcMain.removeListener(`auth-completed-${toolId}`, authCompletedHandler);
-
-        if (!resolved) {
-          resolved = true;
-          if (authCompleted || code === 0) {
-            resolve();
-          } else {
-            reject(new Error(`Login process failed with code ${code}`));
+        // Check for failure
+        if (text.includes('LOGIN_FAILED')) {
+          const reason = text.match(/LOGIN_FAILED:(.+)/);
+          const errorMsg = reason ? reason[1] : 'Unknown reason';
+          logger.error('AuthManager', 'Codex login failed:', errorMsg);
+          this.sendLog(toolId, `Login failed: ${errorMsg}`);
+          if (!resolved) {
+            resolved = true;
+            reject(new Error(`Login failed: ${errorMsg}`));
           }
         }
       });
+
+      expectProcess.stderr?.on('data', (data) => {
+        const error = data.toString();
+        // Only log meaningful errors (not expect's minor warnings)
+        if (!error.includes('spawn id') && !error.includes('not open')) {
+          logger.error('AuthManager', 'Codex expect error:', error);
+        }
+      });
+
+      expectProcess.on('error', (error) => {
+        logger.error('AuthManager', 'Codex expect process error:', error);
+        if (!resolved) {
+          resolved = true;
+          reject(new Error(`Expect process error: ${error.message}`));
+        }
+      });
+
+      // Check for auth file creation periodically (less frequent to avoid race with expect script)
+      const configCheck = setInterval(() => {
+        const authPath = path.join(os.homedir(), '.codex', 'auth.json');
+        const configPath = path.join(os.homedir(), '.codex', 'config.toml');
+        try {
+          if ((fs.existsSync(authPath) || fs.existsSync(configPath)) && !resolved) {
+            logger.info('AuthManager', 'Detected Codex auth file on disk');
+            clearInterval(configCheck);
+            resolved = true;
+            resolve();
+          }
+        } catch {
+          // Not found yet, keep checking
+        }
+      }, 3000);
+
+      expectProcess.on('close', (code) => {
+        logger.info('AuthManager', `Codex expect process exited with code ${code}`);
+        clearInterval(configCheck);
+
+        if (!resolved) {
+          // Check one more time if authenticated
+          setTimeout(() => {
+            this.checkAuthenticated(toolId).then(isAuth => {
+              if (!resolved) {
+                resolved = true;
+                if (isAuth) {
+                  resolve();
+                } else if (code === 0) {
+                  resolve(); // Script completed successfully
+                } else {
+                  reject(new Error(`Expect script failed with code ${code}`));
+                }
+              }
+            });
+          }, 1000);
+        }
+      });
+
+      // Timeout after 10 minutes
+      setTimeout(() => {
+        clearInterval(configCheck);
+        if (!resolved) {
+          resolved = true;
+          expectProcess.kill();
+          reject(new Error('Codex login process timed out'));
+        }
+      }, 10 * 60 * 1000);
     });
   }
 
@@ -582,30 +664,8 @@ export class AuthManager {
 
   private async logoutCodexWithResult(): Promise<{ success: boolean; message: string }> {
     const codexDir = path.join(os.homedir(), '.codex');
-    const authPath = path.join(codexDir, 'auth.json');
-    const configPath = path.join(codexDir, 'config.toml');
 
-    let deletedAny = false;
-
-    // Delete auth.json if exists
-    try {
-      await fsPromises.unlink(authPath);
-      logger.debug('AuthManager', `Deleted Codex auth.json: ${authPath}`);
-      deletedAny = true;
-    } catch {
-      logger.debug('AuthManager', `No Codex auth.json found at ${authPath}`);
-    }
-
-    // Delete config.toml if exists (contains auth info)
-    try {
-      await fsPromises.unlink(configPath);
-      logger.debug('AuthManager', `Deleted Codex config.toml: ${configPath}`);
-      deletedAny = true;
-    } catch {
-      logger.debug('AuthManager', `No Codex config.toml found at ${configPath}`);
-    }
-
-    // Also run codex logout command to ensure complete logout
+    // Also run codex logout command first to ensure complete logout
     try {
       const env = EnvironmentManager.getSpawnEnv();
       execSync('codex logout', {
@@ -617,41 +677,39 @@ export class AuthManager {
       // Ignore errors from logout command
     }
 
-    if (deletedAny) {
-      return { success: true, message: 'Codex logged out successfully' };
-    } else {
-      return { success: true, message: 'No Codex credentials to remove' };
+    // Remove entire .codex directory
+    try {
+      if (fs.existsSync(codexDir)) {
+        await fsPromises.rm(codexDir, { recursive: true, force: true });
+        logger.debug('AuthManager', `Deleted entire Codex directory: ${codexDir}`);
+        return { success: true, message: 'Codex logged out successfully' };
+      } else {
+        logger.debug('AuthManager', `No Codex directory found at ${codexDir}`);
+        return { success: true, message: 'No Codex credentials to remove' };
+      }
+    } catch (error: any) {
+      logger.error('AuthManager', `Error removing Codex directory: ${error.message}`);
+      return { success: false, message: `Error removing Codex credentials: ${error.message}` };
     }
   }
 
   private async logoutGemini(): Promise<{ success: boolean; message: string }> {
     const geminiDir = path.join(os.homedir(), '.gemini');
-    const filesToDelete = [
-      path.join(geminiDir, 'oauth_creds.json'),
-      path.join(geminiDir, 'settings.json')
-    ];
 
-    if (process.platform === 'win32') {
-      const winPath = path.join(process.env.USERPROFILE || os.homedir(), '.gemini');
-      filesToDelete.push(
-        path.join(winPath, 'oauth_creds.json'),
-        path.join(winPath, 'settings.json')
-      );
+    // Remove entire .gemini directory
+    try {
+      if (fs.existsSync(geminiDir)) {
+        await fsPromises.rm(geminiDir, { recursive: true, force: true });
+        logger.debug('AuthManager', `Deleted entire Gemini directory: ${geminiDir}`);
+        return { success: true, message: 'Gemini logged out successfully' };
+      } else {
+        logger.debug('AuthManager', `No Gemini directory found at ${geminiDir}`);
+        return { success: true, message: 'No Gemini credentials to remove' };
+      }
+    } catch (error: any) {
+      logger.error('AuthManager', `Error removing Gemini directory: ${error.message}`);
+      return { success: false, message: `Error removing Gemini credentials: ${error.message}` };
     }
-
-    let deletedAny = false;
-    for (const file of filesToDelete) {
-      try {
-        await fsPromises.unlink(file);
-        logger.debug('AuthManager', `Deleted Gemini file: ${file}`);
-        deletedAny = true;
-      } catch {}
-    }
-
-    return {
-      success: true,
-      message: deletedAny ? 'Gemini credentials removed' : 'No Gemini credentials found'
-    };
   }
 
   private async clearGeminiCredentials(): Promise<void> {

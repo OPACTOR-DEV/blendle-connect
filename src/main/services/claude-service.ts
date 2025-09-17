@@ -356,8 +356,9 @@ expect eof`;
   }
 
   static async checkAuthenticated(): Promise<boolean> {
-    // On macOS, Claude stores auth info in Keychain
+    // Platform-specific credential check
     if (process.platform === 'darwin') {
+      // macOS: Check Keychain
       try {
         const result = execSync('security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null', {
           encoding: 'utf-8'
@@ -369,15 +370,38 @@ expect eof`;
       } catch {
         logger.debug('ClaudeService', 'No Claude credentials found in macOS Keychain');
       }
-    } else {
-      // For other platforms, check for .claude.json file
-      const authPath = path.join(os.homedir(), '.claude.json');
+    } else if (process.platform === 'win32') {
+      // Windows: Check Credential Manager
       try {
-        await fs.promises.access(authPath);
-        logger.debug('ClaudeService', 'Found existing .claude.json auth file');
+        const result = execSync('cmdkey /list:claude-code-credentials', {
+          encoding: 'utf-8',
+          stdio: ['ignore', 'pipe', 'ignore']
+        });
+        if (result && result.includes('claude-code-credentials')) {
+          logger.debug('ClaudeService', 'Found Claude credentials in Windows Credential Manager');
+          return true;
+        }
+      } catch {
+        logger.debug('ClaudeService', 'No Claude credentials in Windows Credential Manager');
+      }
+    } else {
+      // Linux and others: Check for .claude directory/files
+      const claudeDir = path.join(os.homedir(), '.claude');
+      const legacyAuthPath = path.join(os.homedir(), '.claude.json');
+
+      try {
+        await fs.promises.access(claudeDir);
+        logger.debug('ClaudeService', 'Found .claude directory');
         return true;
       } catch {
-        logger.debug('ClaudeService', 'No .claude.json auth file found');
+        // Check legacy auth file
+        try {
+          await fs.promises.access(legacyAuthPath);
+          logger.debug('ClaudeService', 'Found legacy .claude.json auth file');
+          return true;
+        } catch {
+          logger.debug('ClaudeService', 'No Claude auth files found');
+        }
       }
     }
 
@@ -497,40 +521,69 @@ expect eof`;
     });
   }
 
-  private static removeStoredCredentials(): Promise<boolean> {
+  private static async removeStoredCredentials(): Promise<boolean> {
+    let credentialsDeleted = false;
+
+    // Platform-specific credential removal
     if (process.platform === 'darwin') {
-      return new Promise((resolve) => {
-        const securityProcess = spawn('security', ['delete-generic-password', '-s', 'Claude Code-credentials'], {
-          stdio: 'ignore'
-        });
+      // Remove from macOS Keychain
+      try {
+        await new Promise<void>((resolve) => {
+          const securityProcess = spawn('security', ['delete-generic-password', '-s', 'Claude Code-credentials'], {
+            stdio: 'ignore'
+          });
 
-        securityProcess.on('close', (code) => {
-          if (code === 0) {
-            logger.debug('ClaudeService', 'Deleted Claude credentials from macOS Keychain');
-            resolve(true);
-          } else {
-            logger.debug('ClaudeService', 'No Claude credentials to delete from Keychain');
-            resolve(false);
-          }
-        });
+          securityProcess.on('close', (code) => {
+            if (code === 0) {
+              logger.debug('ClaudeService', 'Deleted Claude credentials from macOS Keychain');
+              credentialsDeleted = true;
+              resolve();
+            } else {
+              logger.debug('ClaudeService', 'No Claude credentials to delete from Keychain');
+              resolve();
+            }
+          });
 
-        securityProcess.on('error', (error) => {
-          logger.error('ClaudeService', 'Failed to delete Claude credentials from macOS Keychain', error);
-          resolve(false);
+          securityProcess.on('error', (error) => {
+            logger.error('ClaudeService', 'Failed to delete Claude credentials from macOS Keychain', error);
+            resolve();
+          });
         });
-      });
+      } catch (error) {
+        logger.error('ClaudeService', 'Error removing macOS Keychain credentials', error);
+      }
+    } else if (process.platform === 'win32') {
+      // Windows: Remove from Credential Manager
+      try {
+        execSync('cmdkey /delete:claude-code-credentials', { stdio: 'ignore' });
+        logger.debug('ClaudeService', 'Deleted Claude credentials from Windows Credential Manager');
+        credentialsDeleted = true;
+      } catch {
+        logger.debug('ClaudeService', 'No Claude credentials in Windows Credential Manager');
+      }
     }
 
-    const authPath = path.join(os.homedir(), '.claude.json');
-    return fs.promises.unlink(authPath)
-      .then(() => {
-        logger.debug('ClaudeService', `Deleted Claude auth file: ${authPath}`);
-        return true;
-      })
-      .catch(() => {
-        logger.debug('ClaudeService', 'No .claude.json file to delete');
-        return false;
-      });
+    // Delete entire .claude directory
+    const claudeDir = path.join(os.homedir(), '.claude');
+    try {
+      await fs.promises.rm(claudeDir, { recursive: true, force: true });
+      logger.debug('ClaudeService', `Deleted entire Claude directory: ${claudeDir}`);
+      credentialsDeleted = true;
+    } catch (error) {
+      logger.debug('ClaudeService', `No Claude directory to delete: ${error}`);
+    }
+
+    // Also try to delete legacy .claude.json file
+    const legacyAuthPath = path.join(os.homedir(), '.claude.json');
+    try {
+      await fs.promises.unlink(legacyAuthPath);
+      logger.debug('ClaudeService', `Deleted legacy Claude auth file: ${legacyAuthPath}`);
+      credentialsDeleted = true;
+    } catch {
+      // Ignore if doesn't exist
+    }
+
+    return credentialsDeleted;
   }
 
   private static resolveClaudeBinary(env: NodeJS.ProcessEnv): string {

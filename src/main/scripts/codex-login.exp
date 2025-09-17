@@ -1,0 +1,63 @@
+#!/usr/bin/expect -f
+
+# Codex CLI Automated Login Script
+set timeout 300
+
+# Clean up existing auth first
+catch {exec pkill -f codex}
+catch {exec rm -rf ~/.codex}
+
+# Start Codex login
+puts "LOGIN_INFO:Starting Codex authentication process"
+spawn codex login
+
+expect {
+    -re {https://\S+} {
+        set url $expect_out(0,string)
+        puts "AUTH_URL:$url"
+        puts "LOGIN_INFO:Please complete authentication in browser"
+        exp_continue
+    }
+    "Successfully logged in" {
+        puts "LOGIN_INFO:Browser authentication successful!"
+        send "\r"
+        exp_continue
+    }
+    -re {Introducing GPT-5-Codex} {
+        puts "LOGIN_INFO:GPT-5-Codex introduction screen"
+        send "\r"
+        exp_continue
+    }
+    -re {1\. Try the new GPT-5-Codex model} {
+        puts "LOGIN_INFO:Model selection menu detected, selecting option 1"
+        send "1\r"
+        puts "LOGIN_SUCCESS"
+        exp_continue
+    }
+    -re {1\)} {
+        puts "LOGIN_INFO:Found option 1, selecting"
+        send "1\r"
+        puts "LOGIN_SUCCESS"
+        exp_continue
+    }
+    -re {Enter.*choice|Choose.*option} {
+        puts "LOGIN_INFO:Selection prompt, choosing 1"
+        send "1\r"
+        exp_continue
+    }
+    -re {Press.*Enter.*continue|Continue.*Enter} {
+        puts "LOGIN_INFO:Continue prompt detected"
+        send "\r"
+        exp_continue
+    }
+    timeout {
+        puts "LOGIN_FAILED:Timeout waiting for login flow"
+        exit 1
+    }
+    eof {
+        puts "LOGIN_INFO:Process completed"
+        exit 0
+    }
+}
+
+puts "LOGIN_INFO:Script completed"

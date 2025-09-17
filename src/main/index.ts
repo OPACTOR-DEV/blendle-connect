@@ -15,14 +15,14 @@ let authManager: AuthManager | null = null;
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 900,
-    height: 700,
+    height: 600,
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
       nodeIntegration: false
     },
-    titleBarStyle: 'hiddenInset',
-    backgroundColor: '#1a1b26',
+    title: 'Freerider Connect',
+    backgroundColor: '#f5f5f5',
     icon: path.join(__dirname, '../../assets/icon.png')
   });
 

@@ -9,8 +9,6 @@ class RendererApp {
   private activityLog: HTMLElement | null;
   private toggleDebugBtn: HTMLElement | null;
   private toggleText: HTMLElement | null;
-  private prerequisiteOverlay: HTMLElement | null;
-  private prerequisiteMessage: HTMLElement | null;
 
   private toolStates: Record<ToolId, ToolState> = {
     codex: { connected: false, inProgress: false },
@@ -33,12 +31,13 @@ class RendererApp {
     this.activityLog = document.getElementById('debug-console');
     this.toggleDebugBtn = document.getElementById('toggle-debug');
     this.toggleText = document.getElementById('toggle-text');
-    this.prerequisiteOverlay = document.getElementById('prerequisite-overlay');
-    this.prerequisiteMessage = document.getElementById('prerequisite-message');
 
     this.initializeEventListeners();
     this.initializeIPCHandlers();
-    this.disableAllButtons(); // Disable buttons until prerequisites are ready
+    // Check initial auth status immediately
+    setTimeout(() => {
+      this.checkInitialAuth();
+    }, 500);
   }
 
   private formatTimestamp(): string {
@@ -75,70 +74,62 @@ class RendererApp {
     }
   }
 
-  private updateButtonState(toolId: ToolId, state: 'connecting' | 'connected' | 'error' | 'default'): void {
+  private updateButtonState(toolId: ToolId, state: 'connecting' | 'connected' | 'error' | 'default' | 'disconnecting'): void {
     const connectBtn = document.querySelector(`#connect-${toolId}`) as HTMLButtonElement;
     const disconnectBtn = document.querySelector(`#logout-${toolId}`) as HTMLButtonElement;
-    const copyBtn = document.querySelector(`#copy-${toolId}`) as HTMLButtonElement;
-    const btnText = connectBtn?.querySelector('.btn-text') as HTMLElement;
-    const spinner = connectBtn?.querySelector('.spinner') as HTMLElement;
+    const card = document.querySelector(`#card-${toolId}`) as HTMLElement;
+    const btnText = connectBtn;
 
     if (!connectBtn || !disconnectBtn) return;
+
+    // Update card classes
+    if (card) {
+      card.classList.remove('connecting', 'connected', 'error', 'disconnecting');
+      if (state === 'connecting') card.classList.add('connecting');
+      if (state === 'connected') card.classList.add('connected');
+      if (state === 'error') card.classList.add('error');
+      if (state === 'disconnecting') card.classList.add('disconnecting');
+    }
 
     switch (state) {
       case 'connecting':
         connectBtn.disabled = true;
         if (btnText) btnText.textContent = 'Connecting...';
-        if (spinner) spinner.style.display = 'block';
-        connectBtn.classList.add('loading');
         disconnectBtn.style.display = 'none';
-        if (copyBtn) copyBtn.style.display = 'none';
+        break;
+
+      case 'disconnecting':
+        connectBtn.style.display = 'none';
+        disconnectBtn.style.display = 'block';
+        disconnectBtn.disabled = true;
+        disconnectBtn.textContent = 'Disconnecting...';
         break;
 
       case 'connected':
         connectBtn.style.display = 'none';
-        disconnectBtn.style.display = 'flex';
-        if (copyBtn) copyBtn.style.display = 'flex';
-        if (spinner) spinner.style.display = 'none';
-        connectBtn.classList.remove('loading');
-        this.updateStatus(toolId, 'completed', '✅ Connected successfully!');
+        disconnectBtn.style.display = 'block';
+        disconnectBtn.disabled = false;
+        disconnectBtn.textContent = 'Disconnect';
         break;
 
       case 'error':
         connectBtn.disabled = false;
         if (btnText) btnText.textContent = 'Retry';
-        if (spinner) spinner.style.display = 'none';
-        connectBtn.classList.remove('loading');
-        connectBtn.style.display = 'flex';
+        connectBtn.style.display = 'block';
         disconnectBtn.style.display = 'none';
-        if (copyBtn) copyBtn.style.display = 'none';
         break;
 
       default:
         connectBtn.disabled = false;
         if (btnText) btnText.textContent = 'Connect';
-        if (spinner) spinner.style.display = 'none';
-        connectBtn.classList.remove('loading');
-        connectBtn.style.display = 'flex';
+        connectBtn.style.display = 'block';
         disconnectBtn.style.display = 'none';
-        if (copyBtn) copyBtn.style.display = 'none';
     }
   }
 
   private updateStatus(toolId: ToolId, status: StatusUpdate['status'], message: string): void {
-    const statusIndicator = document.querySelector(`#status-${toolId}`) as HTMLElement;
-    if (!statusIndicator) return;
-
-    statusIndicator.classList.remove('checking', 'installing', 'authenticating', 'completed', 'error', 'extracting');
-
-    if (status && status.trim() !== '') {
-      statusIndicator.classList.add(status);
-      statusIndicator.textContent = message;
-      statusIndicator.style.display = 'block';
-    } else {
-      statusIndicator.textContent = '';
-      statusIndicator.style.display = 'none';
-    }
-
+    // Status is now handled visually through card classes
+    // Keep this method for compatibility but don't display text
     if (message && message.trim() !== '') {
       this.addLogEntry(toolId, message, status === 'error');
     }
@@ -164,7 +155,7 @@ class RendererApp {
 
         if (result.credentials) {
           this.storedCredentials[toolId] = result.credentials;
-          this.addLogEntry(toolId, `✅ Authentication successful!`);
+          this.addLogEntry(toolId, `Authentication successful!`);
           this.showCredentialInfo(toolId, result.credentials);
         }
       } else {
@@ -179,7 +170,8 @@ class RendererApp {
   }
 
   private async logoutTool(toolId: ToolId): Promise<void> {
-    this.updateStatus(toolId, 'checking', 'Logging out...');
+    // Show disconnect in progress state
+    this.updateButtonState(toolId, 'disconnecting');
 
     try {
       const result = await window.api.logoutTool(toolId);
@@ -196,6 +188,8 @@ class RendererApp {
     } catch (error: any) {
       this.addLogEntry(toolId, `Logout error: ${error.message}`, true);
       this.updateStatus(toolId, 'error', `Logout failed`);
+      // Restore the connected state if logout failed
+      this.updateButtonState(toolId, 'connected');
       setTimeout(() => {
         this.updateStatus(toolId, '', '');
       }, 3000);
@@ -302,48 +296,29 @@ class RendererApp {
   private handlePrerequisiteStatus(data: PrerequisiteStatus): void {
     const { status, message } = data;
 
-    // Update overlay message
-    if (this.prerequisiteMessage) {
-      this.prerequisiteMessage.textContent = message;
-    }
-
     if (status === 'checking') {
-      this.addLogEntry('system', `📦 ${message}`);
+      this.addLogEntry('system', `${message}`);
     } else if (status === 'error') {
-      this.addLogEntry('system', `❌ ${message}`, true);
-      // Show error in overlay
-      if (this.prerequisiteMessage) {
-        this.prerequisiteMessage.style.color = 'var(--error)';
-      }
+      this.addLogEntry('system', `Error: ${message}`, true);
     } else if (status === 'success') {
-      this.addLogEntry('system', `✅ ${message}`);
+      this.addLogEntry('system', `${message}`);
     }
   }
 
   private hidePrerequisiteOverlay(): void {
-    if (this.prerequisiteOverlay) {
-      this.prerequisiteOverlay.classList.add('hidden');
-      setTimeout(() => {
-        if (this.prerequisiteOverlay) {
-          this.prerequisiteOverlay.style.display = 'none';
-        }
-      }, 300);
-    }
+    // Overlay removed from UI, no-op
   }
 
-  private disableAllButtons(): void {
-    this.connectButtons.forEach(button => {
-      button.disabled = true;
-      const btnText = button.querySelector('.btn-text') as HTMLElement;
-      if (btnText) btnText.textContent = 'Checking system...';
-    });
-  }
 
   private enableAllButtons(): void {
     this.connectButtons.forEach(button => {
-      button.disabled = false;
-      const btnText = button.querySelector('.btn-text') as HTMLElement;
-      if (btnText) btnText.textContent = 'Connect';
+      const toolId = button.dataset.tool as ToolId;
+      // Only enable if not already connected
+      if (!this.toolStates[toolId]?.connected) {
+        button.disabled = false;
+        const btnText = button;
+        if (btnText) btnText.textContent = 'Connect';
+      }
     });
   }
 
@@ -351,13 +326,13 @@ class RendererApp {
     try {
       const result = await window.api.copyCredentials(toolId);
       if (result.success) {
-        this.addLogEntry(toolId, '📋 ' + (result.message || 'Credentials copied to clipboard'));
+        this.addLogEntry(toolId, result.message || 'Credentials copied to clipboard');
 
         // Show a temporary notification with more detail
         const copyBtn = document.querySelector(`#copy-${toolId}`) as HTMLButtonElement;
         if (copyBtn) {
           const originalText = copyBtn.innerHTML;
-          copyBtn.innerHTML = '<span class="btn-icon">✅</span><span>Copied!</span>';
+          copyBtn.innerHTML = 'Copied!';
           copyBtn.classList.add('success');
           setTimeout(() => {
             copyBtn.innerHTML = originalText;
