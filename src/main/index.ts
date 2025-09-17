@@ -56,7 +56,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  logger.info('App', 'Blendle Connect starting');
+  logger.info('App', 'Freerider Connect starting');
   createWindow();
 });
 

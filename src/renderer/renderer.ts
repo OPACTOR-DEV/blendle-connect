@@ -380,7 +380,7 @@ class RendererApp {
   }
 
   async initialize(): Promise<void> {
-    this.addLogEntry('system', 'Blendle Connect initialized');
+    this.addLogEntry('system', 'Freerider Connect initialized');
     this.addLogEntry('system', 'Checking system prerequisites...');
 
     // Prerequisites will be checked automatically by main process
@@ -393,101 +393,70 @@ class RendererApp {
     overlay.id = 'success-overlay';
     overlay.style.cssText = `
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.8);
-      backdrop-filter: blur(10px);
+      inset: 0;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 24px;
+      background: rgba(250, 250, 250, 0.85);
+      backdrop-filter: blur(8px);
       z-index: 10000;
-      animation: fadeIn 0.3s ease-out;
+      animation: fadeIn 0.2s ease-out;
     `;
 
     // Create success modal
     const modal = document.createElement('div');
     modal.style.cssText = `
-      background: rgba(20, 20, 20, 0.95);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: #ffffff;
       border-radius: 16px;
-      padding: 40px;
+      padding: 32px;
       text-align: center;
-      max-width: 400px;
-      margin: 20px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-      position: relative;
-      animation: slideIn 0.4s ease-out;
+      width: min(420px, 100%);
+      box-shadow: 0 25px 60px rgba(15, 23, 42, 0.08);
+      border: 1px solid rgba(15, 23, 42, 0.06);
+      animation: popIn 0.25s ease-out;
     `;
 
     modal.innerHTML = `
       <div style="
-        width: 60px;
-        height: 60px;
-        margin: 0 auto 20px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 50%;
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 24px;
+        border-radius: 18px;
+        background: rgba(26, 26, 26, 0.05);
         display: flex;
         align-items: center;
         justify-content: center;
-        animation: pulse 2s ease-in-out infinite;
       ">
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3">
-          <path d="M20 6L9 17l-5-5"/>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 6L9 17l-5-5" />
         </svg>
       </div>
       <h2 style="
-        color: #ffffff;
-        font-size: 24px;
+        color: #1a1a1a;
+        font-size: 22px;
         font-weight: 600;
         margin-bottom: 8px;
-        letter-spacing: -0.5px;
-      ">Authentication Complete!</h2>
-      <div style="
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 16px;
-        background: rgba(102, 126, 234, 0.1);
-        border: 1px solid rgba(102, 126, 234, 0.3);
-        border-radius: 20px;
-        color: #667eea;
-        font-size: 14px;
-        font-weight: 500;
-        margin-bottom: 16px;
-      ">
-        <span style="
-          width: 6px;
-          height: 6px;
-          background: #667eea;
-          border-radius: 50%;
-          animation: blink 2s ease-in-out infinite;
-        "></span>
-        Connected
-      </div>
+        letter-spacing: -0.3px;
+      ">You're connected</h2>
       <p style="
-        color: rgba(255, 255, 255, 0.7);
-        font-size: 16px;
+        color: #525252;
+        font-size: 15px;
         line-height: 1.5;
-        margin-bottom: 24px;
+        margin-bottom: 28px;
       ">
-        <strong style="
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        ">${toolName}</strong> has been successfully authenticated and is ready to use.
+        <strong style="color: #1a1a1a; font-weight: 600;">${toolName}</strong> is ready to use in Freerider Connect.
       </p>
       <button id="success-close-btn" style="
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: #1a1a1a;
+        color: #ffffff;
         border: none;
         padding: 12px 24px;
-        border-radius: 8px;
-        color: white;
+        border-radius: 10px;
+        font-size: 15px;
         font-weight: 500;
         cursor: pointer;
-        transition: transform 0.2s ease;
+        transition: background 0.2s ease, transform 0.2s ease;
       ">Continue</button>
     `;
 
@@ -498,19 +467,12 @@ class RendererApp {
         from { opacity: 0; }
         to { opacity: 1; }
       }
-      @keyframes slideIn {
-        from { transform: scale(0.9) translateY(20px); opacity: 0; }
-        to { transform: scale(1) translateY(0); opacity: 1; }
-      }
-      @keyframes pulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.05); }
-      }
-      @keyframes blink {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.3; }
+      @keyframes popIn {
+        from { transform: translateY(12px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
       }
       #success-close-btn:hover {
+        background: #000000;
         transform: translateY(-1px);
       }
     `;

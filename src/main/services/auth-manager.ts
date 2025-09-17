@@ -121,10 +121,16 @@ export class AuthManager {
         try {
           const credPath = path.join(os.homedir(), '.gemini', 'oauth_creds.json');
           if (fs.existsSync(credPath)) {
-            authCompleted = true;
             clearInterval(credPoll);
             logger.info('AuthManager', 'Detected Gemini OAuth credentials on disk');
             this.sendLog(toolId, 'Detected Gemini OAuth credentials on disk');
+            if (!authCompleted) {
+              authCompleted = true;
+              this.mainWindow.webContents.send('show-success-screen', {
+                toolId,
+                toolName: 'Gemini CLI'
+              });
+            }
             if (!resolved) {
               resolved = true;
               return resolve();
@@ -143,12 +149,14 @@ export class AuthManager {
       }, 2 * 60 * 1000);
 
       this.setupGeminiHandlers(login, toolId, () => {
-        authCompleted = true;
-        // Show in-app success notification
-        this.mainWindow.webContents.send('show-success-screen', {
-          toolId,
-          toolName: 'Gemini CLI'
-        });
+        if (!authCompleted) {
+          authCompleted = true;
+          // Show in-app success notification
+          this.mainWindow.webContents.send('show-success-screen', {
+            toolId,
+            toolName: 'Gemini CLI'
+          });
+        }
         if (!resolved) {
           resolved = true;
           resolve();
@@ -533,6 +541,7 @@ export class AuthManager {
     const successPatterns = [
       'successfully signed in',
       'authentication successful',
+      'authentication success',
       'logged in as',
       'authentication complete',
       'login successful',
@@ -540,7 +549,8 @@ export class AuthManager {
       'login completed',
       'loaded cached credentials',
       'already authenticated',
-      'credentials loaded'
+      'credentials loaded',
+      'auth_success'
     ];
 
     if (successPatterns.some(pattern => output.toLowerCase().includes(pattern))) {

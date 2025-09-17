@@ -14,7 +14,7 @@ export class Logger {
   private logFile: fs.WriteStream | null = null;
   private logLevel: LogLevel = LogLevel.INFO;
   private isDevelopment: boolean = process.env.NODE_ENV === 'development';
-  private isDebugMode: boolean = process.env.BLENDLE_DEBUG === '1';
+  private isDebugMode: boolean = process.env.FREERIDER_DEBUG === '1';
 
   private constructor() {
     this.initializeLogFile();
@@ -35,7 +35,7 @@ export class Logger {
         fs.mkdirSync(logDir, { recursive: true });
       }
 
-      const logFileName = `blendle-${new Date().toISOString().split('T')[0]}.log`;
+      const logFileName = `freerider-${new Date().toISOString().split('T')[0]}.log`;
       const logPath = path.join(logDir, logFileName);
 
       this.logFile = fs.createWriteStream(logPath, { flags: 'a' });

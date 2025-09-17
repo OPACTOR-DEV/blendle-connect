@@ -131,7 +131,7 @@ export class CallbackServer {
         <body>
           <div class="container">
             <h1>✓ Authentication Complete</h1>
-            <p>Please return to Blendle Connect.</p>
+            <p>Please return to Freerider Connect.</p>
             <div class="spinner"></div>
           </div>
           <script>

@@ -1,4 +1,4 @@
-# Blendle Connect
+# Freerider Connect
 
 Connect to ChatGPT (Codex) and Gemini CLI tools with OAuth authentication.
 
@@ -50,14 +50,14 @@ npm run build:mac-unsigned
 ## Logging
 
 Logs are stored in:
-- macOS: `~/Library/Application Support/blendle-connect/logs/`
-- Windows: `%APPDATA%/blendle-connect/logs/`
-- Linux: `~/.config/blendle-connect/logs/`
+- macOS: `~/Library/Application Support/freerider-connect/logs/`
+- Windows: `%APPDATA%/freerider-connect/logs/`
+- Linux: `~/.config/freerider-connect/logs/`
 
 ## Environment Variables
 
 - `NODE_ENV=development` - Enable development mode with debug logging
-- `BLENDLE_DEBUG=1` - Enable verbose debug output
+- `FREERIDER_DEBUG=1` - Enable verbose debug output
 
 ## License
 

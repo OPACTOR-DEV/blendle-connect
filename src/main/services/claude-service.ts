@@ -151,7 +151,7 @@ while { $url_found == 0 } {
             }
             set url_found 1
             puts "AUTH_URL:$url"
-            # Surface login URL so Blendle Connect can notify user
+            # Surface login URL so Freerider Connect can notify user
             puts "LOGIN_SUCCESS"
             after 2000
             catch {send "\\003"}
